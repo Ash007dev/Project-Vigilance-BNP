@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>AML Transaction Overview</title>
+
+    <link rel="stylesheet" href="../report.css">
+
+</head>
+
+<body>
+
+<div class="report">
+
+    <!-- HEADER -->
+
+    <header class="report-header">
+
+        <div>
+            <div class="brand">PROJECT VIGILANCE</div>
+
+            <h1>Transaction Overview</h1>
+
+            <p class="subtitle">
+                AML Transaction Screening Report
+            </p>
+        </div>
+
+        <div class="report-meta">
+            <span>Generated Report</span>
+            <strong>Transaction Analysis</strong>
+        </div>
+
+    </header>
+
+
+    <!-- SUMMARY -->
+
+    <section class="summary-grid">
+
+        <div class="metric-card">
+
+            <span class="metric-label">
+                TOTAL TRANSACTIONS
+            </span>
+
+            <span class="metric-value">
+                {{ total_transactions }}
+            </span>
+
+        </div>
+
+
+        <div class="metric-card flagged-card">
+
+            <span class="metric-label">
+                FLAGGED
+            </span>
+
+            <span class="metric-value">
+                {{ flagged_transactions }}
+            </span>
+
+        </div>
+
+
+        <div class="metric-card normal-card">
+
+            <span class="metric-label">
+                UNFLAGGED
+            </span>
+
+            <span class="metric-value">
+                {{ unflagged_transactions }}
+            </span>
+
+        </div>
+
+    </section>
+
+
+    <!-- TRANSACTION TABLE -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+                <span class="section-number">01</span>
+                <h2>Transaction Details</h2>
+            </div>
+
+            <span class="section-note">
+                Uploaded Dataset
+            </span>
+
+        </div>
+
+
+        <div class="table-container">
+
+            <table>
+
+                <thead>
+
+                <tr>
+
+                    <th>Transaction ID</th>
+
+                    <th>Date / Time</th>
+
+                    <th>Sender</th>
+
+                    <th>Receiver</th>
+
+                    <th>Amount</th>
+
+                    <th>Channel</th>
+
+                    <th>Status</th>
+
+                    <th>Reason</th>
+
+                </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                {% for transaction in transactions %}
+
+                <tr>
+
+                    <td class="mono">
+                        {{ transaction.transaction_id }}
+                    </td>
+
+                    <td>
+                        {{ transaction.timestamp }}
+                    </td>
+
+                    <td class="mono">
+                        {{ transaction.sender_account }}
+                    </td>
+
+                    <td class="mono">
+                        {{ transaction.receiver_account }}
+                    </td>
+
+                    <td class="amount">
+                        {{ transaction.currency }}
+                        {{ "%.2f"|format(transaction.amount) }}
+                    </td>
+
+                    <td>
+                        {{ transaction.channel or "—" }}
+                    </td>
+
+                    <td>
+
+                        {% if transaction.status|lower == "flagged" %}
+
+                            <span class="badge badge-danger">
+                                FLAGGED
+                            </span>
+
+                        {% else %}
+
+                            <span class="badge badge-success">
+                                UNFLAGGED
+                            </span>
+
+                        {% endif %}
+
+                    </td>
+
+                    <td class="reason">
+
+                        {{ transaction.flag_reason or "No flag raised" }}
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+
+    <!-- FOOTER -->
+
+    <footer>
+
+        <span>Project Vigilance</span>
+
+        <span>AML Investigation Platform</span>
+
+    </footer>
+
+</div>
+
+</body>
+
+</html>

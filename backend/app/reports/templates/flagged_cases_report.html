@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>Flagged AML Cases</title>
+
+    <link rel="stylesheet" href="../report.css">
+
+</head>
+
+<body>
+
+<div class="report">
+
+
+    <!-- HEADER -->
+
+    <header class="report-header">
+
+        <div>
+
+            <div class="brand">
+                PROJECT VIGILANCE
+            </div>
+
+            <h1>Flagged Cases</h1>
+
+            <p class="subtitle">
+                Suspicious Activity Investigation Queue
+            </p>
+
+        </div>
+
+
+        <div class="report-meta">
+
+            <span>Investigation Status</span>
+
+            <strong>
+                {{ total_cases }} Cases
+            </strong>
+
+        </div>
+
+    </header>
+
+
+    <!-- ALERT -->
+
+    <div class="notice">
+
+        <strong>Investigation Queue</strong>
+
+        <span>
+            The following cases were flagged by the upstream
+            detection and risk-analysis system.
+        </span>
+
+    </div>
+
+
+    <!-- CASE TABLE -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+
+                <span class="section-number">
+                    01
+                </span>
+
+                <h2>Flagged Cases</h2>
+
+            </div>
+
+            <span class="section-note">
+                Requires Investigation
+            </span>
+
+        </div>
+
+
+        <div class="table-container">
+
+            <table>
+
+                <thead>
+
+                <tr>
+
+                    <th>Case ID</th>
+
+                    <th>Account</th>
+
+                    <th>Risk Score</th>
+
+                    <th>Risk Level</th>
+
+                    <th>Suspicious Txns</th>
+
+                    <th>Primary Reason</th>
+
+                </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                {% for case in cases %}
+
+                <tr>
+
+                    <td class="case-id">
+                        {{ case.case_id }}
+                    </td>
+
+                    <td class="mono">
+                        {{ case.account_id }}
+                    </td>
+
+
+                    <td>
+
+                        <strong class="score">
+                            {{ "%.1f"|format(case.risk_score) }}
+                        </strong>
+
+                        <span class="score-max">
+                            / 100
+                        </span>
+
+                    </td>
+
+
+                    <td>
+
+                        {% if case.risk_level|lower == "high" %}
+
+                            <span class="badge badge-danger">
+                                HIGH
+                            </span>
+
+                        {% elif case.risk_level|lower == "medium" %}
+
+                            <span class="badge badge-warning">
+                                MEDIUM
+                            </span>
+
+                        {% else %}
+
+                            <span class="badge badge-success">
+                                LOW
+                            </span>
+
+                        {% endif %}
+
+                    </td>
+
+
+                    <td>
+
+                        <strong>
+                            {{ case.suspicious_transactions }}
+                        </strong>
+
+                    </td>
+
+
+                    <td class="reason">
+
+                        {{ case.primary_reason }}
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+
+    <!-- FOOTER -->
+
+    <footer>
+
+        <span>Project Vigilance</span>
+
+        <span>Confidential Investigation Report</span>
+
+    </footer>
+
+
+</div>
+
+</body>
+
+</html>

@@ -1,18 +1,19 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.upload import router as upload_router
-from app.api.stats import router as stats_router
-
-from app.api.detection import router as detection_router
-from app.api.risk import router as risk_router
 from app.api.alerts import router as alerts_router
-from app.api.investigation import router as investigation_router
+from app.api.detection import router as detection_router
 from app.api.graph import router as graph_router
+from app.api.investigation import router as investigation_router
+from app.api.reports_api import router as reports_router
+from app.api.risk import router as risk_router
+from app.api.stats import router as stats_router
+from app.api.upload import router as upload_router
+
 
 app = FastAPI(
     title="Project Vigilance",
-    description="AI-assisted AML Investigation Platform",
+    description="AI-assisted AML investigation platform",
     version="0.1.0",
 )
 
@@ -29,52 +30,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(
+for router in (
     upload_router,
-    prefix="/api",
-)
-
-app.include_router(
     stats_router,
-    prefix="/api",
-)
-
-app.include_router(
     detection_router,
-    prefix="/api",
-)
-
-app.include_router(
     risk_router,
-    prefix="/api",
-)
-
-app.include_router(
     alerts_router,
-    prefix="/api",
-)
-
-app.include_router(
     investigation_router,
-    prefix="/api",
-)
-
-app.include_router(
     graph_router,
-    prefix="/api",
-)
+    reports_router,
+):
+    app.include_router(router, prefix="/api")
+
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok",
-        "service": "project-vigilance",
-    }
+    return {"status": "ok", "service": "project-vigilance"}
 
 
 @app.get("/")
 def root():
-    return {
-        "project": "Project Vigilance",
-        "status": "running",
-    }
+    return {"project": "Project Vigilance", "status": "running"}
