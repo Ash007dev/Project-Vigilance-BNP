@@ -28,7 +28,6 @@ PATTERN_FUNCTIONS = {
     "bridge_nodes": detect_bridge_nodes,
     "offhours_anomaly": detect_offhours_anomaly,
     "cross_channel_hopping": detect_cross_channel_hopping,
-    "synthetic_identity": detect_synthetic_identity,
     "round_tripping": detect_round_tripping,
     "behavioral_clustering": detect_behavioral_clustering,
 }
