@@ -176,104 +176,116 @@ class AMLDetectionEngine:
         if self.df.empty:
             return findings
 
-        incoming = (
-            self.df
-            .groupby("receiver_account")
-            .agg(
-                incoming_count=(
-                    "transaction_id",
-                    "count",
-                ),
-                incoming_amount=(
-                    "amount",
-                    "sum",
-                ),
-            )
-        )
+        # Work with valid sender/receiver transactions
+        df = self.df[
+            self.df["sender_account"].notna()
+            & self.df["receiver_account"].notna()
+        ].copy()
 
-        outgoing = (
-            self.df
-            .groupby("sender_account")
-            .agg(
-                outgoing_count=(
-                    "transaction_id",
-                    "count",
-                ),
-                outgoing_amount=(
-                    "amount",
-                    "sum",
-                ),
-            )
-        )
-
-        accounts = set(
-            incoming.index
-        ) | set(
-            outgoing.index
+        accounts = set(df["sender_account"].unique()) | set(
+            df["receiver_account"].unique()
         )
 
         for account in accounts:
 
-            inc = incoming.loc[account] \
-                if account in incoming.index \
-                else None
+            incoming = df[
+                df["receiver_account"] == account
+            ].sort_values("timestamp")
 
-            out = outgoing.loc[account] \
-                if account in outgoing.index \
-                else None
+            outgoing = df[
+                df["sender_account"] == account
+            ].sort_values("timestamp")
 
-            incoming_count = (
-                int(inc["incoming_count"])
-                if inc is not None
-                else 0
+            if incoming.empty or outgoing.empty:
+                continue
+
+            incoming_count = len(incoming)
+            outgoing_count = len(outgoing)
+
+            if incoming_count < 3:
+                continue
+
+            # -----------------------------------------------------
+            # Check whether outgoing activity happened AFTER
+            # incoming activity.
+            # -----------------------------------------------------
+
+            first_incoming = incoming["timestamp"].min()
+            last_incoming = incoming["timestamp"].max()
+
+            subsequent_outgoing = outgoing[
+                outgoing["timestamp"] >= first_incoming
+            ]
+
+            if subsequent_outgoing.empty:
+                continue
+
+            incoming_amount = float(
+                incoming["amount"].sum()
             )
 
-            outgoing_count = (
-                int(out["outgoing_count"])
-                if out is not None
-                else 0
+            outgoing_amount = float(
+                subsequent_outgoing["amount"].sum()
             )
 
-            incoming_amount = (
-                float(inc["incoming_amount"])
-                if inc is not None
-                else 0
-            )
+            # Number of unique sources sending money to the account
+            unique_sources = incoming[
+                "sender_account"
+            ].nunique()
 
-            outgoing_amount = (
-                float(out["outgoing_amount"])
-                if out is not None
-                else 0
-            )
+            # Number of unique destinations receiving money
+            unique_destinations = subsequent_outgoing[
+                "receiver_account"
+            ].nunique()
 
+            # -----------------------------------------------------
             # Mule characteristics:
-            # many incoming transactions followed
-            # by outgoing activity.
+            #
+            # 1. Multiple incoming transactions
+            # 2. Multiple/at least one outgoing transaction
+            # 3. Outgoing happens after incoming activity
+            # 4. Money is redistributed to other accounts
+            # -----------------------------------------------------
 
             if (
                 incoming_count >= 3
                 and outgoing_count >= 1
+                and unique_sources >= 2
             ):
 
                 findings.append({
                     "pattern": "MULE_ACCOUNT",
                     "severity": "HIGH",
                     "account": account,
+
                     "incoming_count": incoming_count,
-                    "outgoing_count": outgoing_count,
+                    "outgoing_count": len(
+                        subsequent_outgoing
+                    ),
+
                     "incoming_amount": incoming_amount,
                     "outgoing_amount": outgoing_amount,
+
+                    "unique_sources": int(
+                        unique_sources
+                    ),
+
+                    "unique_destinations": int(
+                        unique_destinations
+                    ),
+
                     "reason": (
-                        f"Account received {incoming_count} "
-                        f"transactions totaling "
-                        f"{incoming_amount:.2f} and subsequently "
-                        f"sent {outgoing_count} transactions "
-                        f"totaling {outgoing_amount:.2f}."
+                        f"Account {account} received "
+                        f"{incoming_count} transactions totaling "
+                        f"{incoming_amount:.2f} from "
+                        f"{unique_sources} different sources, "
+                        f"followed by {len(subsequent_outgoing)} "
+                        f"outgoing transactions totaling "
+                        f"{outgoing_amount:.2f}."
                     ),
                 })
 
         return findings
-
     # =========================================================
     # 3. LAYERING
     # =========================================================
@@ -285,78 +297,173 @@ class AMLDetectionEngine:
         if self.df.empty:
             return findings
 
+        df = self.df[
+            self.df["sender_account"].notna()
+            & self.df["receiver_account"].notna()
+        ].copy()
+
+        df = df.sort_values("timestamp")
+
+        # ---------------------------------------------------------
+        # Build transaction graph
+        # ---------------------------------------------------------
+
         graph = nx.DiGraph()
 
-        for _, row in self.df.iterrows():
+        for _, row in df.iterrows():
 
             sender = row["sender_account"]
             receiver = row["receiver_account"]
-
-            if pd.isna(sender) or pd.isna(receiver):
-                continue
 
             graph.add_edge(
                 sender,
                 receiver,
                 transaction_id=row["transaction_id"],
                 amount=float(row["amount"]),
+                timestamp=row["timestamp"],
             )
 
-        # Identify accounts that participate in
-        # multi-hop transaction chains.
+        # ---------------------------------------------------------
+        # Find A → B → C chains
+        # ---------------------------------------------------------
 
-        for account in graph.nodes:
+        detected_paths = set()
 
-            successors = list(
-                graph.successors(account)
+        for intermediary in graph.nodes:
+
+            incoming = list(
+                graph.predecessors(intermediary)
             )
 
-            if not successors:
+            outgoing = list(
+                graph.successors(intermediary)
+            )
+
+            if not incoming or not outgoing:
                 continue
 
-            for first in successors:
+            for source in incoming:
 
-                second_level = list(
-                    graph.successors(first)
-                )
+                for destination in outgoing:
 
-                if not second_level:
-                    continue
-
-                for second in second_level:
-
-                    if second == account:
+                    if source == destination:
                         continue
 
-                    findings.append({
-                        "pattern": "LAYERING",
-                        "severity": "HIGH",
-                        "account": account,
-                        "path": [
-                            account,
-                            first,
-                            second,
-                        ],
-                        "reason": (
-                            f"Funds move through a multi-hop "
-                            f"transaction chain: "
-                            f"{account} → {first} → {second}."
-                        ),
-                    })
+                    # -------------------------------------------------
+                    # Find actual transactions:
+                    # source → intermediary
+                    # intermediary → destination
+                    # -------------------------------------------------
 
-        # Remove duplicates
-        unique = {}
+                    incoming_rows = df[
+                        (df["sender_account"] == source)
+                        & (
+                            df["receiver_account"]
+                            == intermediary
+                        )
+                    ]
 
-        for finding in findings:
+                    outgoing_rows = df[
+                        (
+                            df["sender_account"]
+                            == intermediary
+                        )
+                        & (
+                            df["receiver_account"]
+                            == destination
+                        )
+                    ]
 
-            key = tuple(
-                finding["path"]
-            )
+                    if incoming_rows.empty or outgoing_rows.empty:
+                        continue
 
-            unique[key] = finding
+                    # -------------------------------------------------
+                    # Look for money movement within 30 minutes
+                    # -------------------------------------------------
 
-        return list(unique.values())
+                    found_chain = False
 
+                    for _, incoming_tx in incoming_rows.iterrows():
+
+                        later_outgoing = outgoing_rows[
+                            (
+                                outgoing_rows["timestamp"]
+                                >= incoming_tx["timestamp"]
+                            )
+                            &
+                            (
+                                outgoing_rows["timestamp"]
+                                <= (
+                                    incoming_tx["timestamp"]
+                                    + timedelta(minutes=30)
+                                )
+                            )
+                        ]
+
+                        if later_outgoing.empty:
+                            continue
+
+                        found_chain = True
+
+                        for _, outgoing_tx in later_outgoing.iterrows():
+
+                            path = (
+                                source,
+                                intermediary,
+                                destination,
+                            )
+
+                            if path in detected_paths:
+                                continue
+
+                            detected_paths.add(path)
+
+                            findings.append({
+                                "pattern": "LAYERING",
+                                "severity": "HIGH",
+                                "account": intermediary,
+
+                                "path": list(path),
+
+                                "transaction_ids": [
+                                    incoming_tx[
+                                        "transaction_id"
+                                    ],
+                                    outgoing_tx[
+                                        "transaction_id"
+                                    ],
+                                ],
+
+                                "amount_in": float(
+                                    incoming_tx["amount"]
+                                ),
+
+                                "amount_out": float(
+                                    outgoing_tx["amount"]
+                                ),
+
+                                "time_difference_minutes": (
+                                    (
+                                        outgoing_tx["timestamp"]
+                                        - incoming_tx["timestamp"]
+                                    ).total_seconds()
+                                    / 60
+                                ),
+
+                                "reason": (
+                                    f"Funds moved from "
+                                    f"{source} through intermediary "
+                                    f"{intermediary} to "
+                                    f"{destination} within "
+                                    f"30 minutes, indicating a "
+                                    f"potential layering chain."
+                                ),
+                            })
+
+                    if found_chain:
+                        continue
+
+        return findings
     # =========================================================
     # 4. CIRCULAR MONEY FLOW
     # =========================================================

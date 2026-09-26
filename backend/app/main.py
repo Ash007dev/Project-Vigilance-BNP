@@ -9,6 +9,7 @@ from app.api.risk import router as risk_router
 from app.api.alerts import router as alerts_router
 from app.api.investigation import router as investigation_router
 from app.api.graph import router as graph_router
+from app.api.ai import router as ai_router
 
 app = FastAPI(
     title="Project Vigilance",
@@ -63,6 +64,11 @@ app.include_router(
     graph_router,
     prefix="/api",
 )
+
+app.include_router(
+    ai_router,
+    prefix="/api",
+    )
 
 @app.get("/health")
 def health():
