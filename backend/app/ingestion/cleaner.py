@@ -50,6 +50,18 @@ class RecordCleaner:
             quarantine_conditions.append(cond)
             quarantine_reasons.append(pl.when(cond).then(pl.lit("invalid_or_missing_timestamp")))
 
+        # A transaction cannot form a graph edge without both accounts.
+        for account_column in ("sender_account", "receiver_account"):
+            if account_column in working_df.columns:
+                cond = (
+                    pl.col(account_column).is_null()
+                    | (pl.col(account_column).cast(pl.Utf8).str.strip_chars() == "")
+                )
+                quarantine_conditions.append(cond)
+                quarantine_reasons.append(
+                    pl.when(cond).then(pl.lit(f"missing_{account_column}"))
+                )
+
         # An amount must be a positive number.
         if "amount" in working_df.columns:
             amt_float = pl.col("amount").cast(pl.Float64, strict=False)

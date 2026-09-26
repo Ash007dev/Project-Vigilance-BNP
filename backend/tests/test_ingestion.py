@@ -35,6 +35,28 @@ def test_pipeline_maps_normalizes_and_quarantines_rows(tmp_path: Path):
     assert result["stats"]["integrity_check"] is True
 
 
+def test_pipeline_quarantines_rows_without_both_accounts(tmp_path: Path):
+    dataset = _write_csv(
+        tmp_path / "missing-accounts.csv",
+        "transaction_id,timestamp,sender_account,receiver_account,amount\n"
+        "tx-ok,2026-01-02 03:04:05,A-1,B-1,100\n"
+        "tx-no-sender,2026-01-02 03:04:05,,B-2,100\n"
+        "tx-no-receiver,2026-01-02 03:04:05,A-3,,100\n",
+    )
+
+    result = IngestionPipeline().run(dataset)
+
+    assert result["clean_df"]["transaction_id"].to_list() == ["tx-ok"]
+    assert set(result["quarantined_df"]["transaction_id"].to_list()) == {
+        "tx-no-sender",
+        "tx-no-receiver",
+    }
+    assert result["stats"]["quarantine_reason_breakdown"] == {
+        "missing_sender_account": 1,
+        "missing_receiver_account": 1,
+    }
+
+
 def test_pipeline_rejects_missing_required_columns(tmp_path: Path):
     dataset = _write_csv(
         tmp_path / "missing.csv",

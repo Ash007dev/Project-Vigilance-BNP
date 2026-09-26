@@ -1,14 +1,24 @@
-# Python
+# Python environments and cache
+venv/
+.venv/
+backend/venv/
 backend/.venv/
 __pycache__/
 *.py[cod]
 
-# Environment
+# Environment and logs
 .env
+.env.*
+*.log
 
 # Node
 frontend/node_modules/
 frontend/dist/
+
+# Build output
+dist/
+build/
+*.egg-info/
 
 # Data
 data/*
