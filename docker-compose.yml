@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:17
+    container_name: vigilance-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vigilance
+      POSTGRES_USER: vigilance
+      POSTGRES_PASSWORD: vigilance
+    ports:
+      - "5433:5432"
+    volumes:
+      - vigilance_pgdata:/var/lib/postgresql/data
+
+volumes:
+  vigilance_pgdata:

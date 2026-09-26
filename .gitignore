@@ -1,8 +1,23 @@
-.env
-.venv/
+# Python
+backend/.venv/
 __pycache__/
-*.pyc
-.pytest_cache/
+*.py[cod]
+
+# Environment
+.env
+
+# Node
 frontend/node_modules/
 frontend/dist/
-frontend/*.tsbuildinfo
+
+# Data
+data/*
+!data/.gitkeep
+
+# Reports
+reports/*
+!reports/.gitkeep
+
+# IDE
+.vscode/
+.idea/
