@@ -1,0 +1,249 @@
+/* =========================================================
+   ARGUS SIDEBAR
+   ========================================================= */
+
+.app-sidebar {
+  position: fixed;
+
+  top: 0;
+  left: 0;
+  bottom: 0;
+
+  width: 307px;
+
+  padding: 113px 12px 20px 12px;
+
+  box-sizing: border-box;
+
+  background: #11151f;
+
+  border-right: 1px solid #252b38;
+
+  z-index: 9999;
+
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+
+/* =========================================================
+   WORKSPACE
+   ========================================================= */
+
+.app-sidebar-workspace {
+  margin-left: 17px;
+
+  margin-bottom: 23px;
+
+  color: #7e98c3;
+
+  font-size: 12px;
+
+  font-weight: 700;
+
+  letter-spacing: 1.7px;
+
+  line-height: 16px;
+}
+
+
+/* =========================================================
+   NAVIGATION
+   ========================================================= */
+
+.app-sidebar-nav {
+  width: 100%;
+
+  display: flex;
+
+  flex-direction: column;
+
+  gap: 3px;
+}
+
+
+/* =========================================================
+   NAVIGATION ITEM
+   ========================================================= */
+
+.app-sidebar-item {
+  position: relative;
+
+  width: 100%;
+
+  height: 50px;
+
+  padding: 0 16px;
+
+  margin: 0;
+
+  display: flex;
+
+  align-items: center;
+
+  gap: 16px;
+
+  box-sizing: border-box;
+
+  border: none;
+
+  outline: none;
+
+  border-radius: 13px;
+
+  background: transparent;
+
+  color: #8fa5c9;
+
+  text-decoration: none;
+
+  font-family: inherit;
+
+  font-size: 16px;
+
+  font-weight: 500;
+
+  line-height: 1;
+
+  cursor: pointer;
+
+  appearance: none;
+
+  -webkit-appearance: none;
+
+  box-shadow: none;
+
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+
+/* =========================================================
+   ICON
+   ========================================================= */
+
+.app-sidebar-item svg {
+  width: 21px;
+
+  height: 21px;
+
+  flex-shrink: 0;
+
+  color: #8fa5c9;
+
+  stroke-width: 1.8;
+}
+
+
+/* =========================================================
+   HOVER
+   ========================================================= */
+
+.app-sidebar-item:hover {
+  background: #171f31;
+
+  color: #b8c7e2;
+
+  text-decoration: none;
+}
+
+
+.app-sidebar-item:hover svg {
+  color: #b8c7e2;
+}
+
+
+/* =========================================================
+   ACTIVE PAGE
+   ========================================================= */
+
+.app-sidebar-item.active {
+  background: #1c2741;
+
+  color: #7093ff;
+
+  font-weight: 600;
+
+  text-decoration: none;
+}
+
+
+.app-sidebar-item.active svg {
+  color: #7093ff;
+}
+
+
+/* =========================================================
+   ACTIVE DOT
+   ========================================================= */
+
+.app-sidebar-active-dot {
+  width: 7px;
+
+  height: 7px;
+
+  margin-left: auto;
+
+  flex-shrink: 0;
+
+  border-radius: 50%;
+
+  background: #7093ff;
+}
+
+
+/* =========================================================
+   REMOVE ANY OLD LOGO STYLES
+   ========================================================= */
+
+.app-sidebar-logo,
+.app-sidebar-logo-icon,
+.app-sidebar-logo-target,
+.app-sidebar-logo-target-inner,
+.app-sidebar-logo-center,
+.app-sidebar-brand,
+.app-sidebar-brand-name,
+.app-sidebar-brand-subtitle {
+  display: none !important;
+}
+
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+  .app-sidebar {
+    width: 76px;
+
+    padding: 30px 10px;
+  }
+
+  .app-sidebar-workspace {
+    display: none;
+  }
+
+  .app-sidebar-item {
+    justify-content: center;
+
+    padding-left: 0;
+
+    padding-right: 0;
+  }
+
+  .app-sidebar-item span:not(.app-sidebar-active-dot) {
+    display: none;
+  }
+
+  .app-sidebar-active-dot {
+    position: absolute;
+
+    right: 7px;
+  }
+}
