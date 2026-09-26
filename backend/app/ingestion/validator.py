@@ -1,13 +1,18 @@
-"""Module for validating incoming data types, formats, and consistency rules."""
+"""Report transaction data problems.
 
-import re
+What: Checks required fields, amounts, IP addresses, and crypto values.
+How: Counts each type of issue without changing source values.
+Result: Returns the DataFrame and a validation report.
+Example: A negative amount is reported as ``INVALID_OR_NEGATIVE_AMOUNT``.
+"""
+
 from typing import Dict, Any, Tuple, List
 import polars as pl
 
 class DataValidator:
     """Validates structural and domain rules without modifying data."""
 
-    # Strict IPv4 Validation Regex
+    # Accept only complete IPv4 addresses.
     IP_REGEX = r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
 
     def validate(self, df: pl.DataFrame) -> Tuple[pl.DataFrame, Dict[str, Any]]:
@@ -16,7 +21,7 @@ class DataValidator:
             pl.lit([]).cast(pl.List(pl.Utf8)).alias("_validation_issues")
         )
 
-        # 1. Missing Required Columns Check
+        # Report missing transaction fields.
         for req_col in ["transaction_id", "timestamp", "sender_account", "receiver_account", "amount"]:
             if req_col not in validated_df.columns:
                 issues.append({
@@ -26,7 +31,7 @@ class DataValidator:
                     "severity": "CRITICAL"
                 })
 
-        # 2. Check Invalid/Missing Transaction IDs
+        # Report missing transaction IDs.
         if "transaction_id" in validated_df.columns:
             null_txn = validated_df.filter(
                 pl.col("transaction_id").is_null() | 
@@ -40,7 +45,7 @@ class DataValidator:
                     "severity": "CRITICAL"
                 })
 
-        # 3. Amount Validation (Flag <= 0 as invalid/quarantine condition)
+        # Report missing or non-positive amounts.
         if "amount" in validated_df.columns:
             invalid_amt = validated_df.filter(
                 pl.col("amount").is_null() | (pl.col("amount") <= 0)
@@ -53,7 +58,7 @@ class DataValidator:
                     "severity": "HIGH"
                 })
 
-        # 4. IP Address Validation
+        # Report invalid IP addresses without rejecting the row.
         if "ip_address" in validated_df.columns:
             invalid_ip = validated_df.filter(
                 pl.col("ip_address").is_not_null() &
@@ -68,7 +73,7 @@ class DataValidator:
                     "severity": "MEDIUM"
                 })
 
-        # 5. Crypto Mismatch Checks
+        # Report crypto flags that disagree with wallet data.
         if "is_crypto" in validated_df.columns and "crypto_wallet" in validated_df.columns:
             wallet_clean = pl.col("crypto_wallet").cast(pl.Utf8).str.strip_chars()
             has_wallet = pl.col("crypto_wallet").is_not_null() & (wallet_clean != "") & (wallet_clean.str.to_lowercase() != "null")

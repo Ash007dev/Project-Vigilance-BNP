@@ -13,6 +13,9 @@ frontend/dist/
 # Data
 data/*
 !data/.gitkeep
+backend/Dataset/
+backend/output/
+/output/
 
 # Reports
 reports/*

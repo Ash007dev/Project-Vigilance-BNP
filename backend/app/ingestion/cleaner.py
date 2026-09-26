@@ -1,6 +1,9 @@
-"""
-Module for Record Classification and Cleaning (app/ingestion/cleaner.py).
-Categorizes records into KEEP (Valid/Flagged) and QUARANTINE.
+"""Separate usable and unusable transaction rows.
+
+What: Removes duplicates, quarantines broken rows, and flags reviewable rows.
+How: Applies clear data-quality rules without suppressing suspicious behavior.
+Result: Returns clean rows, quarantined rows, and summary counts.
+Example: A missing transaction ID is quarantined.
 """
 
 from typing import Dict, Any, Tuple
@@ -16,20 +19,16 @@ class RecordCleaner:
         working_df = df.clone()
         total_input_rows = working_df.height
 
-        # -------------------------------------------------------------------
-        # 1. REMOVE: Exact Full-Row Deduplication
-        # -------------------------------------------------------------------
+        # Remove exact duplicate rows.
         deduped_df = working_df.unique(keep="first")
         total_removed = total_input_rows - deduped_df.height
         working_df = deduped_df
 
-        # -------------------------------------------------------------------
-        # 2. QUARANTINE: Fatal Technical Corruptions ONLY
-        # -------------------------------------------------------------------
+        # Quarantine rows that cannot be used safely.
         quarantine_conditions = []
         quarantine_reasons = []
 
-        # Rule 1: Missing primary identifier
+        # A transaction needs an ID.
         if "transaction_id" in working_df.columns:
             cond = (
                 pl.col("transaction_id").is_null() 
@@ -38,33 +37,33 @@ class RecordCleaner:
             quarantine_conditions.append(cond)
             quarantine_reasons.append(pl.when(cond).then(pl.lit("missing_transaction_id")))
 
-            # Rule 2: Conflicting transaction ID payloads
+            # Reused transaction IDs may describe conflicting records.
             txn_counts = working_df.group_by("transaction_id").agg(pl.len().alias("_txn_id_count"))
             working_df = working_df.join(txn_counts, on="transaction_id", how="left")
             conflict_cond = (pl.col("_txn_id_count") > 1) & (pl.col("transaction_id").is_not_null())
             quarantine_conditions.append(conflict_cond)
             quarantine_reasons.append(pl.when(conflict_cond).then(pl.lit("conflicting_transaction_id")))
 
-        # Rule 3: Missing timestamp
+        # A transaction needs a timestamp.
         if "timestamp" in working_df.columns:
             cond = pl.col("timestamp").is_null()
             quarantine_conditions.append(cond)
             quarantine_reasons.append(pl.when(cond).then(pl.lit("invalid_or_missing_timestamp")))
 
-        # Rule 4: Invalid/missing numeric amount
+        # An amount must be a positive number.
         if "amount" in working_df.columns:
             amt_float = pl.col("amount").cast(pl.Float64, strict=False)
             cond = amt_float.is_null() | (amt_float <= 0.0)
             quarantine_conditions.append(cond)
             quarantine_reasons.append(pl.when(cond).then(pl.lit("invalid_or_missing_amount")))
 
-        # Rule 5: Unrecognized boolean value in is_crypto
+        # The crypto flag must be recognizable.
         if "is_crypto" in working_df.columns:
             cond = pl.col("is_crypto").is_null()
             quarantine_conditions.append(cond)
             quarantine_reasons.append(pl.when(cond).then(pl.lit("unrecognized_is_crypto_value")))
 
-        # Combine Quarantine Conditions
+        # A row is quarantined when any required rule fails.
         if quarantine_conditions:
             is_quarantined = pl.lit(False)
             for cond in quarantine_conditions:
@@ -82,9 +81,7 @@ class RecordCleaner:
 
         clean_working_df = working_df.filter(~is_quarantined).drop(["_txn_id_count"], strict=False)
 
-        # -------------------------------------------------------------------
-        # 3. KEEP + FLAG: Retain Record and Append Risk/Quality Flags
-        # -------------------------------------------------------------------
+        # Keep usable rows and attach review flags.
         flag_exprs = []
 
         if "is_crypto" in clean_working_df.columns and "crypto_wallet" in clean_working_df.columns:
@@ -146,7 +143,7 @@ class RecordCleaner:
                 pl.lit("KEEP").alias("data_quality_status")
             )
 
-        # Statistics Calculation
+        # Summarize why rows were quarantined or flagged.
         quarantine_reasons_breakdown = {}
         if quarantined_df.height > 0:
             q_counts = quarantined_df.group_by("quarantine_reason").agg(pl.len().alias("count"))
@@ -161,7 +158,7 @@ class RecordCleaner:
                 for row in f_counts.iter_rows():
                     flag_reasons_breakdown[row[0]] = row[1]
 
-        # Convert List(Utf8) to string format for CSV export compatibility
+        # Join flags so the result can be written to CSV.
         clean_df = clean_df.with_columns(
             pl.col("dq_flags_list").list.join("; ").alias("dq_flags")
         ).drop("dq_flags_list")

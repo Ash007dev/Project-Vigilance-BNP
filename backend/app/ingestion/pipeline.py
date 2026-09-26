@@ -1,189 +1,128 @@
-"""
-Ingestion Pipeline Orchestrator (app/ingestion/pipeline.py)
-Handles file detection, dynamic Excel/Zip decryption,
-Polars data loading, record classification, and saving outputs to disk.
+"""Run the complete data-ingestion flow.
+
+What: Loads, maps, normalizes, validates, and cleans transaction files.
+How: Each ingestion step receives the result of the previous step.
+Result: Returns clean and quarantined rows in memory, plus a clear report.
+Example: ``IngestionPipeline().run("transactions.csv")``.
 """
 
-import os
-import io
+from __future__ import annotations
+
 import logging
-import zipfile
+import os
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Any
 
 import polars as pl
 
-try:
-    import msoffcrypto
-except ImportError:
-    msoffcrypto = None
-
 from app.ingestion.cleaner import RecordCleaner
+from app.ingestion.loader import DataLoader, EncryptedWorkbookPasswordRequired
+from app.ingestion.mapper import ColumnMapper
+from app.ingestion.normalizer import DataNormalizer
+from app.ingestion.validator import DataValidator
 
-logging.basicConfig(level=logging.INFO, format="[+] %(message)s")
-logger = logging.getLogger("IngestionPipeline")
+logger = logging.getLogger(__name__)
 
 
 class IngestionPipeline:
-    def __init__(self, default_password: Optional[str] = None, output_dir: str = "output"):
+    """Connect every ingestion step and return one result dictionary."""
+
+    def __init__(
+        self,
+        default_password: str | None = None,
+        output_dir: str | Path | None = None,
+    ) -> None:
+        self.password = (
+            default_password
+            or os.getenv("VIGILANCE_DATASET_PASSWORD")
+            or os.getenv("ENCRYPTION_KEY")
+            or None
+        )
+        self.output_dir = Path(output_dir) if output_dir is not None else None
+        self.mapper = ColumnMapper()
+        self.normalizer = DataNormalizer()
+        self.validator = DataValidator()
         self.cleaner = RecordCleaner()
-        self.password = default_password or os.getenv("ENCRYPTION_KEY", "")
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def inspect_and_decrypt(self, file_path: str) -> Tuple[Optional[bytes], str]:
-        ext = Path(file_path).suffix.lower()
+    @staticmethod
+    def _failure(reason: str, stats: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "status": "FAILED",
+            "reason": reason,
+            "clean_df": None,
+            "quarantined_df": None,
+            "stats": stats or {},
+            "output_files": {},
+        }
 
-        if ext in [".xlsx", ".xls"]:
-            if msoffcrypto is None:
-                with open(file_path, "rb") as f:
-                    return f.read(), "UNENCRYPTED_FILE"
-
-            try:
-                with open(file_path, "rb") as f:
-                    office_file = msoffcrypto.OfficeFile(f)
-                    
-                    if office_file.is_encrypted():
-                        logger.warning(f"Encrypted Excel file detected: {file_path}")
-                        if not self.password:
-                            return None, "ENCRYPTED_FILE_MISSING_KEY"
-
-                        decrypted_stream = io.BytesIO()
-                        office_file.load_key(password=self.password)
-                        office_file.decrypt(decrypted_stream)
-                        decrypted_stream.seek(0)
-                        return decrypted_stream.getvalue(), "DECRYPT_SUCCESS"
-            except Exception as e:
-                logger.error(f"Error checking or decrypting Excel file: {e}")
-                return None, "DECRYPTION_FAILED_INVALID_KEY"
-
-        elif ext == ".zip":
-            try:
-                with zipfile.ZipFile(file_path, "r") as zf:
-                    is_encrypted = any(zinfo.flag_bits & 0x1 for zinfo in zf.infolist())
-
-                    if is_encrypted:
-                        logger.warning(f"Encrypted ZIP archive detected: {file_path}")
-                        if not self.password:
-                            return None, "ENCRYPTED_FILE_MISSING_KEY"
-
-                    for filename in zf.namelist():
-                        if filename.lower().endswith((".csv", ".xlsx", ".xls")):
-                            pwd_bytes = self.password.encode("utf-8") if is_encrypted else None
-                            content = zf.read(filename, pwd=pwd_bytes)
-                            status = "DECRYPT_SUCCESS" if is_encrypted else "UNENCRYPTED_FILE"
-                            return content, status
-                            
-            except RuntimeError:
-                return None, "DECRYPTION_FAILED_INVALID_KEY"
-            except Exception as e:
-                logger.error(f"Error inspecting ZIP archive: {e}")
-                return None, "CORRUPTED_ARCHIVE"
-
-        with open(file_path, "rb") as f:
-            return f.read(), "UNENCRYPTED_FILE"
-
-    def run(self, file_path: str) -> Dict[str, Any]:
-        logger.info(f"Starting Ingestion Pipeline for: {file_path}")
-
-        if not os.path.exists(file_path):
-            logger.error(f"File not found: {file_path}")
-            return {
-                "status": "FAILED",
-                "reason": "FILE_NOT_FOUND",
-                "clean_df": None,
-                "quarantined_df": None,
-                "stats": {},
-            }
-
-        file_bytes, decrypt_status = self.inspect_and_decrypt(file_path)
-
-        if decrypt_status in ["ENCRYPTED_FILE_MISSING_KEY", "DECRYPTION_FAILED_INVALID_KEY"]:
-            hold_or_quarantine = "HOLD" if decrypt_status == "ENCRYPTED_FILE_MISSING_KEY" else "QUARANTINE"
-            logger.error(f"Pipeline Action: [{hold_or_quarantine}] | Reason: {decrypt_status}")
-            return {
-                "status": hold_or_quarantine,
-                "reason": decrypt_status,
-                "clean_df": None,
-                "quarantined_df": None,
-                "stats": {"decryption_status": decrypt_status},
-            }
-
+    def run(self, file_path: str | Path) -> dict[str, Any]:
+        """Run ingestion and keep results in memory unless an output folder is set."""
         try:
-            ext = Path(file_path).suffix.lower()
+            raw_df, load_report = DataLoader(file_path, password=self.password).load()
+        except FileNotFoundError:
+            return self._failure("FILE_NOT_FOUND")
+        except EncryptedWorkbookPasswordRequired:
+            result = self._failure("ENCRYPTED_FILE_MISSING_PASSWORD")
+            result["status"] = "HOLD"
+            return result
+        except ValueError as exc:
+            return self._failure("UNSUPPORTED_FILE", {"error": str(exc)})
+        except ImportError as exc:
+            return self._failure("MISSING_DEPENDENCY", {"error": str(exc)})
+        except Exception as exc:
+            logger.exception("Could not load the ingestion file")
+            return self._failure("UNREADABLE_FILE", {"error": str(exc)})
 
-            if ext == ".csv" or (decrypt_status in ["DECRYPT_SUCCESS", "UNENCRYPTED_FILE"] and ext == ".zip"):
-                raw_df = pl.read_csv(io.BytesIO(file_bytes), infer_schema_length=10000)
-            elif ext in [".xlsx", ".xls"]:
-                raw_df = pl.read_excel(io.BytesIO(file_bytes))
-            else:
-                raise ValueError(f"Unsupported file format for ingestion: {ext}")
+        mapped_df, mapping_report = self.mapper.map_schema(raw_df)
+        missing_required = mapping_report["missing_required_fields"]
+        if missing_required:
+            return self._failure(
+                "MISSING_REQUIRED_COLUMNS",
+                {
+                    "load": load_report,
+                    "mapping": mapping_report,
+                    "missing_required_fields": missing_required,
+                },
+            )
 
-            logger.info(" Data successfully loaded into memory DataFrame.")
-        except Exception as e:
-            logger.error(f"Failed to read file into DataFrame: {e}")
-            return {
-                "status": "QUARANTINE",
-                "reason": f"UNPARSEABLE_FILE_FORMAT: {str(e)}",
-                "clean_df": None,
-                "quarantined_df": None,
-                "stats": {},
-            }
+        normalized_df, normalization_report = self.normalizer.normalize(mapped_df)
+        validated_df, validation_report = self.validator.validate(normalized_df)
+        validated_df = validated_df.drop("_validation_issues", strict=False)
+        clean_df, quarantined_df, cleaning_report = self.cleaner.process(validated_df)
 
-        # Step 3: Run Cleaning and Classification Rules
-        clean_df, quarantined_df, stats = self.cleaner.process(raw_df)
-        stats["decryption_status"] = decrypt_status
+        stats = {
+            **cleaning_report,
+            "load": load_report,
+            "mapping": mapping_report,
+            "normalization": normalization_report,
+            "validation": validation_report,
+            "missing_required_fields": [],
+        }
+        output_files = self._save_outputs(clean_df, quarantined_df)
 
-        # -------------------------------------------------------------------
-        # Step 4: SAVE OUTPUT DATASETS TO DISK (.csv)
-        # -------------------------------------------------------------------
-        clean_path = self.output_dir / "cleaned_dataset.csv"
-        quarantine_path = self.output_dir / "quarantined_dataset.csv"
-
-        if clean_df is not None and clean_df.height > 0:
-            clean_df.write_csv(clean_path)
-            logger.info(f" Saved cleaned dataset to: {clean_path}")
-
-        if quarantined_df is not None and quarantined_df.height > 0:
-            quarantined_df.write_csv(quarantine_path)
-            logger.info(f" Saved quarantined dataset to: {quarantine_path}")
-
-        logger.info(" Data normalization and record classification completed.")
         return {
             "status": "COMPLETED",
             "reason": None,
             "clean_df": clean_df,
             "quarantined_df": quarantined_df,
             "stats": stats,
-            "output_files": {
-                "clean_csv": str(clean_path),
-                "quarantine_csv": str(quarantine_path)
-            }
+            "output_files": output_files,
         }
 
+    def _save_outputs(
+        self,
+        clean_df: pl.DataFrame,
+        quarantined_df: pl.DataFrame,
+    ) -> dict[str, str]:
+        if self.output_dir is None:
+            return {}
 
-if __name__ == "__main__":
-    import sys
-
-    target_file = "Dataset/Project_Vigilance_Dataset_Password_Protected.xlsx"
-    if len(sys.argv) > 1:
-        target_file = sys.argv[1]
-
-    # Set password here
-    FILE_PASSWORD = r"5kZa7cY=6SC&gw1GP0Qn6A%(g]O}CA\-"
-
-    pipeline = IngestionPipeline(default_password=FILE_PASSWORD)
-    result = pipeline.run(target_file)
-
-    print("\n=================== Pipeline Result ===================")
-    print(f"Status           : {result['status']}")
-    print(f"Reason/Flag      : {result['reason']}")
-    if result.get("output_files"):
-        print(f"Saved Clean CSV  : {result['output_files']['clean_csv']}")
-        print(f"Saved Quar. CSV  : {result['output_files']['quarantine_csv']}")
-    if result["stats"]:
-        print(f"Decryption Status: {result['stats'].get('decryption_status')}")
-        print(f"Clean Records    : {result['stats'].get('clean_usable_records')}")
-        print(f"Quarantined      : {result['stats'].get('quarantined_records')}")
-        print(f"Duplicates Cleaned: {result['stats'].get('removed_duplicate_copies')}")
-    print("=======================================================")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        clean_path = self.output_dir / "cleaned_dataset.csv"
+        quarantine_path = self.output_dir / "quarantined_dataset.csv"
+        clean_df.write_csv(clean_path)
+        quarantined_df.write_csv(quarantine_path)
+        return {
+            "clean_csv": str(clean_path),
+            "quarantine_csv": str(quarantine_path),
+        }

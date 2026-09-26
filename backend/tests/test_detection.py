@@ -574,6 +574,33 @@ def test_registry_runner_rejects_missing_required_columns():
         run_all_detections(pd.DataFrame([{"transaction_id": "TX-1"}]))
 
 
+def test_database_engine_adapter_uses_the_registered_detectors():
+    from app.detection.engine import AMLDetectionEngine
+    from app.risk.engine import RiskEngine
+    from backend.app.detection.registry import PATTERN_FUNCTIONS
+
+    frame = transactions(
+        *[
+            {
+                "sender_account": "STRUCTURED",
+                "timestamp": BASE_TIME + timedelta(hours=index),
+                "amount": 99_000,
+            }
+            for index in range(6)
+        ]
+    )
+
+    results = AMLDetectionEngine(frame).run_all()
+
+    assert set(results) == set(PATTERN_FUNCTIONS)
+    assert results["structuring"][0]["account"] == "STRUCTURED"
+    assert results["structuring"][0]["pattern"] == "STRUCTURING"
+    assert results["structuring"][0]["evidence"]["transaction_ids"]
+    risk = RiskEngine(results).calculate()[0]
+    assert risk["risk_score"] >= 30
+    assert "STRUCTURING" in risk["patterns"]
+
+
 @pytest.mark.parametrize(
     "detector,arguments",
     [

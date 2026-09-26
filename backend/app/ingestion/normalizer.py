@@ -1,4 +1,10 @@
-"""Module for standardizing formats, strings, and types without semantic loss."""
+"""Normalize transaction values.
+
+What: Cleans supported text, numbers, dates, and boolean values.
+How: Uses safe Polars conversions that turn invalid values into nulls.
+Result: Produces consistent values for validation and detection.
+Example: ``" usd "`` becomes ``"USD"``.
+"""
 
 from typing import Tuple, Dict, Any
 import polars as pl
@@ -20,7 +26,7 @@ class DataNormalizer:
     def normalize(self, df: pl.DataFrame) -> Tuple[pl.DataFrame, Dict[str, Any]]:
         norm_df = df.clone()
 
-        # 1. Clean Country & Channel Strings (Trim & Normalize Case)
+        # Use consistent text for countries and channels.
         if "location_country" in norm_df.columns:
             norm_df = norm_df.with_columns(
                 pl.when(pl.col("location_country").is_not_null())
@@ -35,7 +41,7 @@ class DataNormalizer:
             )
 
         if "channel" in norm_df.columns:
-            # Match against known channel mapping or default to Titlecase
+            # Keep known channel abbreviations uppercase.
             norm_df = norm_df.with_columns(
                 pl.when(pl.col("channel").is_not_null())
                 .then(
@@ -43,7 +49,10 @@ class DataNormalizer:
                     .cast(pl.Utf8)
                     .str.strip_chars()
                     .str.to_lowercase()
-                    .replace(self.KNOWN_CHANNELS, default=pl.col("channel").cast(pl.Utf8).str.strip_chars().str.to_titlecase())
+                    .replace_strict(
+                        self.KNOWN_CHANNELS,
+                        default=pl.col("channel").cast(pl.Utf8).str.strip_chars().str.to_titlecase(),
+                    )
                 )
                 .otherwise(pl.col("channel"))
                 .alias("channel")
@@ -57,13 +66,16 @@ class DataNormalizer:
                     .cast(pl.Utf8)
                     .str.strip_chars()
                     .str.to_lowercase()
-                    .replace(self.KNOWN_CURRENCIES, default=pl.col("currency").cast(pl.Utf8).str.strip_chars().str.to_uppercase())
+                    .replace_strict(
+                        self.KNOWN_CURRENCIES,
+                        default=pl.col("currency").cast(pl.Utf8).str.strip_chars().str.to_uppercase(),
+                    )
                 )
                 .otherwise(pl.col("currency"))
                 .alias("currency")
             )
 
-        # 2. Standardize City Titles
+        # Use title case for cities.
         if "location_city" in norm_df.columns:
             norm_df = norm_df.with_columns(
                 pl.when(pl.col("location_city").is_not_null())
@@ -72,7 +84,7 @@ class DataNormalizer:
                 .alias("location_city")
             )
 
-        # 3. Parse Amounts safely to Float64 (Preserve signs; remove currency symbols and commas)
+        # Turn formatted amounts into numbers without hiding invalid values.
         if "amount" in norm_df.columns:
             norm_df = norm_df.with_columns(
                 pl.col("amount")
@@ -83,7 +95,7 @@ class DataNormalizer:
                 .alias("amount")
             )
 
-        # 4. Parse Timestamps safely to UTC Datetime using Chrono Fractional Formats
+        # Accept the timestamp formats used by supported datasets.
         if "timestamp" in norm_df.columns:
             ts_col = pl.col("timestamp").cast(pl.Utf8).str.strip_chars()
             norm_df = norm_df.with_columns(
@@ -97,7 +109,7 @@ class DataNormalizer:
                 ]).alias("timestamp")
             )
 
-        # 5. Normalize Boolean is_crypto Indicator
+        # Convert common crypto flag values to true or false.
         if "is_crypto" in norm_df.columns:
             norm_df = norm_df.with_columns(
                 pl.when(pl.col("is_crypto").cast(pl.Utf8).str.strip_chars().str.to_lowercase().is_in(["true", "1", "yes", "t"]))

@@ -1,4 +1,10 @@
-"""Module for mapping arbitrary input schemas to Canonical AML Schema."""
+"""Map source columns to the transaction schema.
+
+What: Recognizes common names such as ``Txn ID`` and ``From Account``.
+How: Compares simple normalized names with a list of known aliases.
+Result: Returns canonical columns and a mapping report.
+Example: ``Txn ID`` becomes ``transaction_id``.
+"""
 
 import re
 from typing import Dict, List, Tuple, Any
@@ -61,8 +67,6 @@ class ColumnMapper:
         
         mapping: Dict[str, str] = {}
         ambiguous_mappings: Dict[str, List[str]] = {}
-        mapped_canonical: Dict[str, str] = {}
-
         for canonical_col, alias_list in self.aliases.items():
             candidates = []
             target_set = {self._normalize_name(canonical_col)} | {self._normalize_name(a) for a in alias_list}
@@ -73,11 +77,10 @@ class ColumnMapper:
 
             if len(candidates) == 1:
                 mapping[candidates[0]] = canonical_col
-                mapped_canonical[canonical_col] = candidates[0]
             elif len(candidates) > 1:
                 ambiguous_mappings[canonical_col] = candidates
 
-        # Unmapped columns keep original names, prefixed with unmapped_
+        # Keep unknown columns unchanged so no source data is lost.
         rename_dict = {}
         unmapped_original = []
         for col in original_cols:
@@ -88,7 +91,7 @@ class ColumnMapper:
 
         mapped_df = df.rename(rename_dict)
 
-        # Capabilities Assessment
+        # Report which required and optional fields are available.
         missing_required = []
         missing_optional = []
         for col, req_type in CANONICAL_SCHEMA.items():
@@ -98,7 +101,7 @@ class ColumnMapper:
                 else:
                     missing_optional.append(col)
 
-        # Null checks vs Absence
+        # Count null values separately from missing columns.
         null_counts = {}
         for col in mapped_df.columns:
             null_counts[col] = mapped_df[col].null_count()

@@ -1,4 +1,10 @@
-"""Module for loading CSV and XLSX files into Polars DataFrames."""
+"""Load transaction files.
+
+What: Opens CSV, XLS, and XLSX files.
+How: Decrypts encrypted Excel files in memory, then reads them with Polars.
+Result: Returns a DataFrame and basic file details.
+Example: ``DataLoader("transactions.xlsx", password="...").load()``.
+"""
 
 import io
 from pathlib import Path
@@ -10,6 +16,10 @@ try:
     HAS_MSOFFCRYPTO = True
 except ImportError:
     HAS_MSOFFCRYPTO = False
+
+
+class EncryptedWorkbookPasswordRequired(Exception):
+    """Raised when an encrypted workbook has no password."""
 
 
 class DataLoader:
@@ -55,27 +65,25 @@ class DataLoader:
         is_encrypted = False
         file_source: Any = self.file_path
 
-        if self.password:
-            if not HAS_MSOFFCRYPTO:
-                raise ImportError("msoffcrypto-tool is required for password-protected XLSX files.")
-            
-            decrypted_stream = io.BytesIO()
+        if HAS_MSOFFCRYPTO:
             with open(self.file_path, "rb") as f:
                 office_file = msoffcrypto.OfficeFile(f)
-                office_file.load_key(password=self.password)
-                office_file.decrypt(decrypted_stream)
-            decrypted_stream.seek(0)
-            file_source = decrypted_stream
-            is_encrypted = True
+                is_encrypted = office_file.is_encrypted()
+                if is_encrypted and not self.password:
+                    raise EncryptedWorkbookPasswordRequired
+                if is_encrypted:
+                    decrypted_stream = io.BytesIO()
+                    office_file.load_key(password=self.password)
+                    office_file.decrypt(decrypted_stream)
+                    decrypted_stream.seek(0)
+                    file_source = decrypted_stream
 
         try:
-            # First attempt using calamine engine for speed
             df = pl.read_excel(file_source, engine="calamine")
         except Exception:
-            # Fallback to default excel engine
             if isinstance(file_source, io.BytesIO):
                 file_source.seek(0)
-            df = pl.read_excel(file_source)
+            df = pl.read_excel(file_source, engine="openpyxl")
 
         return df, is_encrypted
 
