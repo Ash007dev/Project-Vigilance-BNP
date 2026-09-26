@@ -11,17 +11,21 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [stats, setStats] = useState<DatasetStats | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [error, setError] = useState("");
+  const [statsError, setStatsError] = useState("");
+  const [alertsError, setAlertsError] = useState("");
+  const [alertsLoading, setAlertsLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
-    Promise.all([getStats(), getAlerts()])
-      .then(([nextStats, nextAlerts]) => {
-        if (!active) return;
-        setStats(nextStats);
-        setAlerts(nextAlerts.alerts);
-      })
-      .catch((requestError) => active && setError(apiErrorMessage(requestError)));
+    getStats()
+      .then((nextStats) => active && setStats(nextStats))
+      .catch((requestError) => active && setStatsError(apiErrorMessage(requestError)));
+
+    getAlerts()
+      .then((nextAlerts) => active && setAlerts(nextAlerts.alerts))
+      .catch((requestError) => active && setAlertsError(apiErrorMessage(requestError)))
+      .finally(() => active && setAlertsLoading(false));
+
     return () => { active = false; };
   }, []);
 
@@ -47,7 +51,7 @@ export default function Dashboard() {
         </header>
 
         <div className="dashboard-content">
-          {error ? <p role="alert" className="error-message">{error}</p> : null}
+          {statsError ? <p role="alert" className="error-message">{statsError}</p> : null}
           <section className="kpi-grid">
             {kpis.map(({ title, value, icon: Icon }) => (
               <div className="kpi-card" key={title}>
@@ -75,7 +79,9 @@ export default function Dashboard() {
                   ))}
                 </tbody>
               </table>
-              {!error && alerts.length === 0 ? <p>No alerts found.</p> : null}
+              {alertsLoading ? <p>Detection is running. Dataset totals are ready above.</p> : null}
+              {alertsError ? <p role="alert" className="error-message">{alertsError}</p> : null}
+              {!alertsLoading && !alertsError && alerts.length === 0 ? <p>No alerts found.</p> : null}
             </div>
           </section>
         </div>
