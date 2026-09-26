@@ -17,7 +17,7 @@ def get_investigation(account: str):
     detection_engine = AMLDetectionEngine()
     detection_results = detection_engine.run_all()
 
-    risk_engine = RiskEngine(detection_results)
+    risk_engine = RiskEngine(detection_results, frame=detection_engine.df)
     risk_scores = risk_engine.calculate()
 
     risk_data = next(

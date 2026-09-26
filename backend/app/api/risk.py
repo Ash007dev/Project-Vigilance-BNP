@@ -17,7 +17,8 @@ def get_risk_scores():
     )
 
     risk_engine = RiskEngine(
-        detection_results
+        detection_results,
+        frame=detection_engine.df,
     )
 
     scores = risk_engine.calculate()

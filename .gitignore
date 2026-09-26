@@ -5,6 +5,7 @@ backend/venv/
 backend/.venv/
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
 # Environment and logs
 .env

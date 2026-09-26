@@ -10,14 +10,14 @@ def get_alerts():
     detection_engine = AMLDetectionEngine()
     detection_results = detection_engine.run_all()
 
-    risk_engine = RiskEngine(detection_results)
+    risk_engine = RiskEngine(detection_results, frame=detection_engine.df)
     risk_scores = risk_engine.calculate()
 
     alerts = []
 
     for item in risk_scores:
-        # Only create alerts for entities with suspicious activity
-        if item["risk_score"] > 0:
+        # Low-risk accounts stay visible in scores but do not create alerts.
+        if item["risk_level"] != "LOW":
             alerts.append(
                 {
                     "alert_id": f"ALT-{len(alerts) + 1:04d}",
