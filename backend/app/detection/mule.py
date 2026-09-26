@@ -1,10 +1,11 @@
-"""Detect accounts that receive money and quickly forward it.
+"""
+This is basically to detect accounts that receive money and quickly forward it.
 
-How it works: match a large incoming transfer with a later outgoing transfer
+How it works is that it match a large incoming transfer with a later outgoing transfer
 from the same account and currency. The account is suspicious after this happens
 for money received from several senders.
 
-Result: one ``(account, "mule_behavior", evidence)`` tuple for each matching
+Result: one (account, "mule_behavior", evidence) tuple for each matching
 account.
 
 Example: an account receives 200,000 from two people and forwards most of each
