@@ -12,7 +12,6 @@ from .threshold import detect_threshold_avoidance
 from .bridge import detect_bridge_nodes
 from .offhours import detect_offhours_anomaly
 from .channels import detect_cross_channel_hopping
-from .synthetic import detect_synthetic_identity
 from .round_trip import detect_round_tripping
 from .clustering import detect_behavioral_clustering
 
