@@ -116,11 +116,18 @@ class ReactFlowSerializer:
         edges = []
 
         for source, target, key, attrs in self.graph.edges(keys=True, data=True):
-            tx_id = attrs.get("transaction_id", key)
+            tx_id = attrs.get("transaction_id")
+
+            # Ensure every edge has a unique React Flow ID
+            edge_id = (
+                str(tx_id)
+                if tx_id is not None
+                else f"{source}-{target}-{key}-{attrs.get('relation', 'EDGE')}"
+            )
 
             edges.append(
                 {
-                    "id": str(tx_id),
+                    "id": edge_id,
                     "source": str(source),
                     "target": str(target),
                     "type": "default",
@@ -140,7 +147,6 @@ class ReactFlowSerializer:
             )
 
         return edges
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------

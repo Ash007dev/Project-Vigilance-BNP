@@ -109,9 +109,9 @@ class TimelineAnalyzer:
         account_id: str,
     ) -> list[dict[str, Any]]:
         """
-        Return a chronological timeline for an account.
+        Return a chronological timeline of monetary transactions for an account.
 
-        Includes both incoming and outgoing transactions.
+        Includes only incoming and outgoing SENDS_TO transactions.
 
         Returns:
             List of events sorted by timestamp.
@@ -124,12 +124,15 @@ class TimelineAnalyzer:
 
         events: list[dict[str, Any]] = []
 
-        # Outgoing transactions
+        # Outgoing transaction edges only
         for _, receiver, _, edge in self.graph.out_edges(
             account,
             keys=True,
             data=True,
         ):
+            if edge.get("relation") != "SENDS_TO":
+                continue
+
             events.append(
                 self._event(
                     sender=account,
@@ -139,12 +142,15 @@ class TimelineAnalyzer:
                 )
             )
 
-        # Incoming transactions
+        # Incoming transaction edges only
         for sender, _, _, edge in self.graph.in_edges(
             account,
             keys=True,
             data=True,
         ):
+            if edge.get("relation") != "SENDS_TO":
+                continue
+
             events.append(
                 self._event(
                     sender=sender,
@@ -162,7 +168,7 @@ class TimelineAnalyzer:
         )
 
         logger.info(
-            "Generated timeline for account %s with %d events.",
+            "Generated timeline for account %s with %d transaction events.",
             account,
             len(events),
         )

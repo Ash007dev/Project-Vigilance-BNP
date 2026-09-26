@@ -223,6 +223,9 @@ class TraversalAnalyzer:
 
                     if edge_dict:
                         for edge in edge_dict.values():
+                            if edge.get("relation") != "SENDS_TO":
+                                continue
+
                             transactions.append(
                                 {
                                     "sender": sender,
