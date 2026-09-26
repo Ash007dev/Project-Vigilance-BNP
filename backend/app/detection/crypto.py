@@ -1,45 +1,99 @@
-"""Independent AML indicator: detect_crypto_offramp. Returns uniform (account_id, pattern, evidence) tuples."""
+"""Detect rapid movement from non-crypto activity into crypto.
+
+How it works: keep recent non-crypto transactions for each account. When that
+account sends a crypto transaction, compare its amount with the recent activity.
+
+Result: one ``(account, "crypto_offramp", evidence)`` tuple for each matching
+account.
+
+Example: an account receives 900,000 INR and sends a similar value to a crypto
+wallet 30 minutes later. The account is returned for review.
+"""
 from __future__ import annotations
-from collections import defaultdict
+
+from collections import defaultdict, deque
 from decimal import Decimal
-from zoneinfo import ZoneInfo
-import networkx as nx
-import numpy as np
+
 import pandas as pd
-from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import StandardScaler
+
 from .common import _evidence, _frame, _id, _results, _truth
-from .structuring import detect_structuring
 
 
-def detect_crypto_offramp(df: pd.DataFrame, lookback_hours=24, threshold=1_000_000):
-    """Find a fiat-to-crypto-marked transition after a detected structuring episode.
+def detect_crypto_offramp(
+    df: pd.DataFrame,
+    lookback_hours=24,
+    amount_tolerance=0.25,
+):
+    """Find comparable crypto transfers after recent non-crypto activity."""
+    if lookback_hours <= 0:
+        raise ValueError("lookback_hours must be positive")
+    if not 0 <= amount_tolerance <= 1:
+        raise ValueError("amount_tolerance must be between 0 and 1")
 
-    ``is_crypto`` alone does not establish wallet direction. Despite the
-    historical detector name, this is an *on-ramp-like* observation, not a
-    verified crypto off-ramp or wallet transfer.
-    """
-    records = _frame(df, ("transaction_id", "timestamp", "sender_account", "receiver_account", "amount", "currency", "is_crypto"))
-    prior_hits = defaultdict(list)
-    for account, _, evidence in detect_structuring(df, threshold=threshold):
-        ids = set(evidence["transaction_ids"])
-        prior_hits[account] = [r for r in records if r["transaction_id"] in ids and not _truth(r["is_crypto"])]
+    records = _frame(
+        df,
+        (
+            "transaction_id",
+            "timestamp",
+            "sender_account",
+            "receiver_account",
+            "amount",
+            "currency",
+            "is_crypto",
+        ),
+    )
+    histories = defaultdict(deque)
     found = {}
-    for row in sorted(records, key=lambda r: r["timestamp"]):
-        account = _id(row["sender_account"])
-        if not account or not _truth(row["is_crypto"]):
+    horizon = pd.Timedelta(hours=lookback_hours)
+    tolerance = Decimal(str(amount_tolerance))
+
+    for row in sorted(records, key=lambda item: item["timestamp"]):
+        sender = _id(row["sender_account"])
+        receiver = _id(row["receiver_account"])
+
+        if not _truth(row["is_crypto"]):
+            for account in {sender, receiver} - {None}:
+                histories[account].append(row)
             continue
-        same_currency = _id(row["currency"])
-        previous = [r for r in records if _id(r["sender_account"]) == account
-                    and _id(r["currency"]) == same_currency and r["timestamp"] < row["timestamp"]]
-        if not previous or _truth(max(previous, key=lambda r: r["timestamp"])["is_crypto"]):
+
+        if not sender or sender in found:
             continue
-        supporting = [r for r in prior_hits[account] if _id(r["currency"]) == same_currency
-                      and pd.Timedelta(0) < row["timestamp"] - r["timestamp"] <= pd.Timedelta(hours=lookback_hours)]
-        if supporting and account not in found:
-            found[account] = _evidence(supporting + [row],
-                                       {"transition": "prior non-crypto activity -> crypto-marked transaction",
-                                        "supporting_prior_count": len(supporting), "currency": _id(row["currency"])},
-                                       {"lookback_hours": lookback_hours, "structuring_threshold": str(threshold)},
-                                       ["is_crypto does not specify a wallet direction; fiat-to-crypto movement is unverified."])
+
+        history = histories[sender]
+        while history and row["timestamp"] - history[0]["timestamp"] > horizon:
+            history.popleft()
+
+        matches = []
+        for previous in reversed(history):
+            gap = row["timestamp"] - previous["timestamp"]
+            if gap <= pd.Timedelta(0):
+                continue
+            difference = abs(row["amount"] - previous["amount"]) / previous["amount"]
+            if difference <= tolerance:
+                matches.append((previous, difference, gap))
+                break
+        if not matches:
+            continue
+
+        previous, difference, gap = matches[0]
+        found[sender] = _evidence(
+            [previous, row],
+            {
+                "transition": "recent non-crypto activity to crypto transaction",
+                "previous_currency": _id(previous["currency"]),
+                "crypto_currency": _id(row["currency"]),
+                "amount_difference_fraction": float(difference),
+                "minutes_between": round(gap.total_seconds() / 60, 2),
+                "crypto_destination": receiver,
+            },
+            {
+                "lookback_hours": lookback_hours,
+                "amount_tolerance": amount_tolerance,
+            },
+            [
+                "The crypto flag and comparable values suggest a transition, but "
+                "they do not verify wallet ownership or exchange rates."
+            ],
+        )
+
     return _results(found, "crypto_offramp")

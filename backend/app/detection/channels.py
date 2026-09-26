@@ -1,18 +1,22 @@
-"""Independent AML indicator: detect_cross_channel_hopping. Returns uniform (account_id, pattern, evidence) tuples."""
+"""Detect a customer switching between several payment channels.
+
+How it works: count the customer's distinct sending channels inside a rolling
+time window.
+
+Result: one ``(account, "cross_channel_hopping", evidence)`` tuple for each
+matching account.
+
+Example: the same customer uses UPI, NEFT, and RTGS within one hour, so the
+customer's account is returned for review.
+"""
 from __future__ import annotations
 from collections import defaultdict
-from decimal import Decimal
-from zoneinfo import ZoneInfo
-import networkx as nx
-import numpy as np
 import pandas as pd
-from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import StandardScaler
 from .common import _evidence, _frame, _id, _results
 
 
 def detect_cross_channel_hopping(df: pd.DataFrame, min_channels=3, window_hours=1):
-    """Find at least three origin channels used by one customer during an hour."""
+    """Find customers using several sending channels in a short period."""
     records = _frame(df, ("transaction_id", "timestamp", "sender_account", "sender_customer_id", "channel"))
     groups = defaultdict(list)
     for row in records:

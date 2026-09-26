@@ -1,18 +1,23 @@
-"""Independent AML indicator: detect_bridge_nodes. Returns uniform (account_id, pattern, evidence) tuples."""
+"""Detect accounts that connect otherwise separate groups.
+
+How it works: calculate graph betweenness and compare each account with the
+configured percentile.
+
+Result: one ``(account, "bridge_nodes", evidence)`` tuple for each strong
+bridge account.
+
+Example: if most transfers between two groups pass through X, X is returned
+for review.
+"""
 from __future__ import annotations
 from collections import defaultdict
-from decimal import Decimal
-from zoneinfo import ZoneInfo
 import networkx as nx
 import numpy as np
-import pandas as pd
-from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import StandardScaler
 from .common import _evidence, _graph_edges, _results
 
 
 def detect_bridge_nodes(graph: nx.DiGraph, percentile=99):
-    """Flag top-percentile betweenness accounts, noting whether their transfer count is ordinary."""
+    """Find accounts with unusually high betweenness centrality."""
     edges = _graph_edges(graph)
     if len(edges) < 2:
         return []

@@ -1,4 +1,12 @@
-"""The 15 callable indicator modules, in the requested evaluation order."""
+"""List and run every AML detector.
+
+How it works: build the transaction graph once, then give each detector the
+DataFrame, graph, or both inputs it needs.
+
+Result: one combined list of ``(account, pattern, evidence)`` tuples.
+
+Example: ``run_all_detections(frame)`` runs all registered patterns in order.
+"""
 from .common import build_transaction_graph
 from .structuring import detect_structuring
 from .layering import detect_layering
@@ -31,3 +39,25 @@ PATTERN_FUNCTIONS = {
     "round_tripping": detect_round_tripping,
     "behavioral_clustering": detect_behavioral_clustering,
 }
+
+
+GRAPH_PATTERNS = {
+    "fan_in_out",
+    "bridge_nodes",
+    "round_tripping",
+}
+
+
+def run_all_detections(df):
+    """Run all registered detectors and return their combined findings."""
+    graph = build_transaction_graph(df)
+    results = []
+    for pattern, detector in PATTERN_FUNCTIONS.items():
+        if pattern == "mule_behavior":
+            findings = detector(df, graph)
+        elif pattern in GRAPH_PATTERNS:
+            findings = detector(graph)
+        else:
+            findings = detector(df)
+        results.extend(findings)
+    return results

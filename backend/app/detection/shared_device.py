@@ -1,36 +1,75 @@
-"""Independent AML indicator: detect_shared_device_ip. Returns uniform (account_id, pattern, evidence) tuples."""
+"""Detect devices or IP addresses shared by many customers.
+
+How it works: group transactions by device and IP, then count distinct customer
+IDs using each value.
+
+Result: one ``(account, "shared_device_ip", evidence)`` tuple for each account
+using an over-shared device or IP.
+
+Example: four customers use the same device when the limit is three, so their
+accounts are returned for review.
+"""
 from __future__ import annotations
+
 from collections import defaultdict
-from decimal import Decimal
-from zoneinfo import ZoneInfo
-import networkx as nx
-import numpy as np
+
 import pandas as pd
-from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import StandardScaler
+
 from .common import _evidence, _frame, _id, _results
 
 
 def detect_shared_device_ip(df: pd.DataFrame, max_customers=3):
-    """Find a sender device or originating IP recorded for more than three distinct customers."""
-    records = _frame(df, ("transaction_id", "timestamp", "sender_account", "sender_customer_id", "device_id", "ip_address"))
+    """Find devices or IP addresses used by too many customers."""
+    records = _frame(
+        df,
+        (
+            "transaction_id",
+            "timestamp",
+            "sender_account",
+            "sender_customer_id",
+            "device_id",
+            "ip_address",
+        ),
+    )
     grouped = defaultdict(list)
     for row in records:
         for field in ("device_id", "ip_address"):
-            if _id(row[field]) and _id(row["sender_customer_id"]):
-                grouped[(field, _id(row[field]))].append(row)
-    found = defaultdict(lambda: {"rows": [], "device_id": [], "ip_address": []})
-    for (field, identifier), group in grouped.items():
-        customers = {_id(r["sender_customer_id"]) for r in group}
-        if len(customers) > max_customers:
-            for row in group:
-                account = _id(row["sender_account"])
-                if account:
-                    found[account]["rows"].append(row)
-                    found[account][field].append({"value": identifier, "distinct_customers": len(customers)})
-    return _results({account: _evidence(item["rows"],
-                                         {"device_id": list({v["value"]: v for v in item["device_id"]}.values()),
-                                          "ip_address": list({v["value"]: v for v in item["ip_address"]}.values())},
-                                         {"max_customers": max_customers},
-                                         ["A shared device or IP does not establish common control; public infrastructure is possible."])
-                     for account, item in found.items()}, "shared_device_ip")
+            identifier = _id(row[field])
+            customer = _id(row["sender_customer_id"])
+            if identifier and customer:
+                grouped[(field, identifier)].append(row)
+
+    flagged = defaultdict(lambda: {"rows": [], "device_id": [], "ip_address": []})
+    for (field, identifier), rows in grouped.items():
+        customers = {_id(row["sender_customer_id"]) for row in rows}
+        if len(customers) <= max_customers:
+            continue
+        for row in rows:
+            account = _id(row["sender_account"])
+            if not account:
+                continue
+            flagged[account]["rows"].append(row)
+            flagged[account][field].append(
+                {"value": identifier, "distinct_customers": len(customers)}
+            )
+
+    findings = {}
+    for account, item in flagged.items():
+        findings[account] = _evidence(
+            item["rows"],
+            {
+                "device_id": list(
+                    {value["value"]: value for value in item["device_id"]}.values()
+                ),
+                "ip_address": list(
+                    {value["value"]: value for value in item["ip_address"]}.values()
+                ),
+            },
+            {"max_customers": max_customers},
+            [
+                "A shared device or IP can be legitimate, such as public Wi-Fi or "
+                "a shared computer."
+            ],
+        )
+
+    return _results(findings, "shared_device_ip")

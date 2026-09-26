@@ -1,19 +1,23 @@
-"""Independent AML indicator: detect_offhours_anomaly. Returns uniform (account_id, pattern, evidence) tuples."""
+"""Detect an account's first unusual night-time transaction.
+
+How it works: learn the account's earlier transaction hours, then look for a
+new transfer inside the configured off-hours period.
+
+Result: one ``(account, "offhours_anomaly", evidence)`` tuple for each account.
+
+Example: an account with five daytime transfers suddenly sends at 03:00, so it
+is returned for review.
+"""
 from __future__ import annotations
 from collections import defaultdict
-from decimal import Decimal
 from zoneinfo import ZoneInfo
-import networkx as nx
-import numpy as np
 import pandas as pd
-from sklearn.cluster import DBSCAN
-from sklearn.preprocessing import StandardScaler
 from .common import _evidence, _frame, _id, _results
 
 
 def detect_offhours_anomaly(df: pd.DataFrame, local_timezone="UTC", start_hour=2, end_hour=5,
                             min_history=5):
-    """Spot 02:00-05:00 local sender activity after at least five earlier normal-hour transfers."""
+    """Find new off-hours activity after a normal-hours history."""
     records = _frame(df, ("transaction_id", "timestamp", "sender_account"))
     zone = ZoneInfo(local_timezone)
     groups = defaultdict(list)

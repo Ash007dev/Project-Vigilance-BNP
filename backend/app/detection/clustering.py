@@ -1,9 +1,16 @@
-"""Independent AML indicator: detect_behavioral_clustering. Returns uniform (account_id, pattern, evidence) tuples."""
+"""Detect small groups of accounts with very similar behaviour.
+
+How it works: build simple activity features, scale them, and use DBSCAN to
+find small dense groups.
+
+Result: one ``(account, "behavioral_clustering", evidence)`` tuple for every
+account in a matching group.
+
+Example: two accounts with the same transfer count, values, timing, and channel
+mix are returned together for review.
+"""
 from __future__ import annotations
 from collections import defaultdict
-from decimal import Decimal
-from zoneinfo import ZoneInfo
-import networkx as nx
 import numpy as np
 import pandas as pd
 from sklearn.cluster import DBSCAN
@@ -13,7 +20,7 @@ from .common import _evidence, _frame, _id, _results
 
 def detect_behavioral_clustering(df: pd.DataFrame, eps=.45, min_samples=2,
                                  max_cluster_fraction=.25, min_accounts=8):
-    """Use scaled activity features to identify small dense groups, excluding broad normal clusters."""
+    """Find small groups with similar activity features."""
     records = _frame(df, ("transaction_id", "timestamp", "sender_account", "amount", "channel"))
     grouped = defaultdict(list)
     for row in records:

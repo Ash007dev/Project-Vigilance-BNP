@@ -1,103 +1,85 @@
+"""Detect a large amount split across several smaller transfers.
+
+How it works: keep each sender's below-threshold transfers in a rolling time
+window. Flag the sender when the count is high and the combined value reaches
+the reporting threshold.
+
+Result: one ``(account, "structuring", evidence)`` tuple for each sender.
+
+Example: six transfers of 99,000 in one day are individually below a 100,000
+limit but clearly exceed it together, so the sender is returned.
+"""
+from __future__ import annotations
+
+from collections import defaultdict
+from decimal import Decimal
+
 import pandas as pd
 
-TRANSACTION_THRESHOLD = 1_000_000
+from .common import _evidence, _frame, _id, _money, _results
+
+
+TRANSACTION_THRESHOLD = 100_000
 MIN_TRANSACTIONS = 5
 TIME_WINDOW_HOURS = 24
 
 
-def detect_structuring(transactions: pd.DataFrame):
+def detect_structuring(
+    df: pd.DataFrame,
+    threshold=TRANSACTION_THRESHOLD,
+    min_transactions=MIN_TRANSACTIONS,
+    window_hours=TIME_WINDOW_HOURS,
+    below_fraction=0.10,
+):
+    """Find repeated below-threshold transfers with a large combined value."""
+    if min_transactions < 1:
+        raise ValueError("min_transactions must be at least 1")
+    if window_hours <= 0:
+        raise ValueError("window_hours must be positive")
+    if not 0 < below_fraction <= 1:
+        raise ValueError("below_fraction must be between 0 and 1")
 
-    required_columns = [
-        "transaction_id",
-        "timestamp",
-        "sender_account",
-        "amount"
-    ]
+    records = _frame(df, ("transaction_id", "timestamp", "sender_account", "amount"))
+    limit = _money(threshold)
+    lower_bound = limit * (1 - Decimal(str(below_fraction)))
+    grouped = defaultdict(list)
+    for row in records:
+        account = _id(row["sender_account"])
+        if account and lower_bound <= row["amount"] < limit:
+            grouped[account].append(row)
 
-    # Check required columns
-    missing_columns = [
-        column for column in required_columns
-        if column not in transactions.columns
-    ]
-
-    if missing_columns:
-        raise ValueError(
-            f"Missing required columns: {missing_columns}"
-        )
-
-    # Work on a copy so we don't modify the original data
-    df = transactions.copy()
-
-    # Convert timestamp to datetime
-    df["timestamp"] = pd.to_datetime(
-        df["timestamp"],
-        errors="coerce"
-    )
-
-    # Remove invalid timestamps
-    df = df.dropna(subset=["timestamp"])
-
-    # Keep transactions below the configured threshold
-    df = df[
-        df["amount"] < TRANSACTION_THRESHOLD
-    ].copy()
-
-    # Sort by account and timestamp
-    df = df.sort_values(
-        ["sender_account", "timestamp"]
-    )
-
-    suspicious_accounts = []
-
-    # Analyze each sender account separately
-    for account_id, account_transactions in df.groupby(
-        "sender_account"
-    ):
-
-        account_transactions = account_transactions.reset_index(
-            drop=True
-        )
-
-        # Sliding time window
-        for start_index in range(
-            len(account_transactions)
-        ):
-
-            start_time = account_transactions.loc[
-                start_index,
-                "timestamp"
-            ]
-
-            end_time = (
-                start_time +
-                pd.Timedelta(hours=TIME_WINDOW_HOURS)
+    found = {}
+    horizon = pd.Timedelta(hours=window_hours)
+    for account, rows in grouped.items():
+        rows.sort(key=lambda row: row["timestamp"])
+        left = 0
+        total = Decimal(0)
+        for right, row in enumerate(rows):
+            total += row["amount"]
+            while row["timestamp"] - rows[left]["timestamp"] > horizon:
+                total -= rows[left]["amount"]
+                left += 1
+            count = right - left + 1
+            if count <= min_transactions or total < limit:
+                continue
+            window = rows[left : right + 1]
+            found[account] = _evidence(
+                window,
+                {
+                    "transaction_count": count,
+                    "total_amount": str(total),
+                },
+                {
+                    "threshold": str(limit),
+                    "min_transactions": min_transactions,
+                    "window_hours": window_hours,
+                    "below_fraction": below_fraction,
+                },
+                [
+                    "Several smaller transfers may have a legitimate business reason; "
+                    "the pattern does not prove intent."
+                ],
             )
+            break
 
-            window = account_transactions[
-                (account_transactions["timestamp"] >= start_time)
-                &
-                (account_transactions["timestamp"] <= end_time)
-            ]
-
-            # Check whether the number of transactions crosses the configured threshold
-            if len(window) > MIN_TRANSACTIONS:
-
-                suspicious_accounts.append({
-                    "account_id": account_id,
-                    "pattern": "structuring",
-                    "transaction_count": len(window),
-                    "total_amount": float(
-                        window["amount"].sum()
-                    ),
-                    "window_start": start_time,
-                    "window_end": end_time,
-                    "transaction_ids": (
-                        window["transaction_id"]
-                        .tolist()
-                    )
-                })
-
-                # We already found suspicious behavior for this account.
-                break
-
-    return suspicious_accounts
+    return _results(found, "structuring")

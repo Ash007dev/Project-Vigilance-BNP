@@ -1,11 +1,18 @@
-"""Shared validation, evidence format, and bounded graph traversal for indicators."""
+"""Provide shared input, money, graph, and evidence helpers.
+
+How it works: clean detector inputs once and format every finding the same way.
+
+Result: detector modules receive safe records and return consistent evidence.
+
+Example: ``build_transaction_graph(frame)`` keeps every valid transfer as its
+own dated graph edge.
+"""
 from __future__ import annotations
-from collections import defaultdict
 from decimal import Decimal, InvalidOperation
-from math import comb
 import networkx as nx
 import numpy as np
 import pandas as pd
+from scipy.stats import binom
 
 
 def _id(value):
@@ -36,21 +43,27 @@ def _q75(values):
 def _frame(df: pd.DataFrame, required: tuple[str, ...]):
     if not isinstance(df, pd.DataFrame):
         raise TypeError("Expected a pandas DataFrame")
-    if df.empty:
-        return []
     missing = sorted(set(required) - set(df.columns))
     if missing:
         raise ValueError("Missing required columns: " + ", ".join(missing))
+    if df.empty:
+        return []
     records = df.to_dict("records")
     if "timestamp" in required:
         times = pd.to_datetime([r["timestamp"] for r in records], utc=True, errors="coerce")
-        if times.isna().any():
-            raise ValueError("Invalid timestamp in nonempty input")
-        for row, stamp in zip(records, times):
+        valid = ~times.isna()
+        records = [row for row, keep in zip(records, valid) if keep]
+        for row, stamp in zip(records, times[valid]):
             row["timestamp"] = stamp
     if "amount" in required:
+        valid_records = []
         for row in records:
-            row["amount"] = _money(row["amount"])
+            try:
+                row["amount"] = _money(row["amount"])
+            except ValueError:
+                continue
+            valid_records.append(row)
+        records = valid_records
     for row in records:
         if "transaction_id" in row:
             row["transaction_id"] = _id(row["transaction_id"])
@@ -65,10 +78,16 @@ def _truth(value):
     return value == 1
 
 
-def _evidence(records, metrics, parameters=None, limitations=None):
+def _evidence(records, metrics, parameters=None, limitations=None, max_records=100):
+    records = list(records)
     times = [r["timestamp"] for r in records if r.get("timestamp") is not None]
+    if len(records) > max_records:
+        half = max_records // 2
+        evidence_records = records[:half] + records[-(max_records - half) :]
+    else:
+        evidence_records = records
     return {
-        "transaction_ids": list(dict.fromkeys(str(r["transaction_id"]) for r in records if r.get("transaction_id") is not None)),
+        "transaction_ids": list(dict.fromkeys(str(r["transaction_id"]) for r in evidence_records if r.get("transaction_id") is not None)),
         "window_start": min(times).isoformat() if times else None,
         "window_end": max(times).isoformat() if times else None,
         "metrics": metrics,
@@ -115,39 +134,5 @@ def _graph_edges(graph):
     return sorted(edges, key=lambda e: (e["timestamp"], str(e["transaction_id"])))
 
 
-def _adjacency(edges):
-    result = defaultdict(list)
-    for edge in edges:
-        result[edge["src"]].append(edge)
-    return result
-
-
-def _temporal_cycles(graph, max_depth, horizon, max_expansions):
-    """Enumerate only short, time-respecting cycles on bounded case subgraphs."""
-    edges = _graph_edges(graph)
-    adj = _adjacency(edges)
-    expansions = 0
-    for first in edges:
-        if first["src"] == first["dst"]:
-            continue
-        stack = [(first["dst"], [first], {first["src"], first["dst"]})]
-        while stack:
-            node, path, visited = stack.pop()
-            if len(path) >= max_depth:
-                continue
-            for edge in adj[node]:
-                if edge["timestamp"] <= path[-1]["timestamp"] or edge["currency"] != first["currency"]:
-                    continue
-                if edge["timestamp"] - first["timestamp"] > horizon:
-                    break
-                expansions += 1
-                if expansions > max_expansions:
-                    raise RuntimeError("Temporal cycle search budget exceeded; analyse a smaller case subgraph")
-                if edge["dst"] == first["src"]:
-                    yield path + [edge]
-                elif edge["dst"] not in visited:
-                    stack.append((edge["dst"], path + [edge], visited | {edge["dst"]}))
-
-
 def _binomial_tail(n, hits, p):
-    return sum(comb(n, k) * p ** k * (1 - p) ** (n - k) for k in range(hits, n + 1))
+    return float(binom.sf(hits - 1, n, p))
