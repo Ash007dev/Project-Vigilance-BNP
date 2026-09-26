@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>Investigation Report - {{ case_id }}</title>
+
+    <link rel="stylesheet" href="../report.css">
+
+</head>
+
+
+<body>
+
+<div class="report">
+
+
+    <!-- HEADER -->
+
+    <header class="report-header">
+
+        <div>
+
+            <div class="brand">
+                PROJECT VIGILANCE
+            </div>
+
+            <h1>Investigation Report</h1>
+
+            <p class="subtitle">
+                Suspicious Activity Case
+            </p>
+
+        </div>
+
+
+        <div class="report-meta">
+
+            <span>CASE</span>
+
+            <strong>
+                {{ case_id }}
+            </strong>
+
+        </div>
+
+    </header>
+
+
+    <!-- CASE OVERVIEW -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+
+                <span class="section-number">
+                    01
+                </span>
+
+                <h2>Case Overview</h2>
+
+            </div>
+
+        </div>
+
+
+        <div class="case-overview">
+
+            <div class="case-info">
+
+                <span class="label">
+                    CASE ID
+                </span>
+
+                <strong>
+                    {{ case_id }}
+                </strong>
+
+            </div>
+
+
+            <div class="case-info">
+
+                <span class="label">
+                    ACCOUNT
+                </span>
+
+                <strong class="mono">
+                    {{ account_id }}
+                </strong>
+
+            </div>
+
+
+            <div class="case-info">
+
+                <span class="label">
+                    RISK SCORE
+                </span>
+
+                <strong class="large-score">
+                    {{ "%.1f"|format(risk_score) }}
+                    <small>/100</small>
+                </strong>
+
+            </div>
+
+
+            <div class="case-info">
+
+                <span class="label">
+                    RISK LEVEL
+                </span>
+
+                {% if risk_level|lower == "high" %}
+
+                    <span class="badge badge-danger">
+                        HIGH
+                    </span>
+
+                {% elif risk_level|lower == "medium" %}
+
+                    <span class="badge badge-warning">
+                        MEDIUM
+                    </span>
+
+                {% else %}
+
+                    <span class="badge badge-success">
+                        LOW
+                    </span>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+    </section>
+
+
+    <!-- SUMMARY -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+
+                <span class="section-number">
+                    02
+                </span>
+
+                <h2>Investigation Summary</h2>
+
+            </div>
+
+        </div>
+
+
+        <div class="summary-box">
+
+            {{ investigation_summary }}
+
+        </div>
+
+    </section>
+
+
+    <!-- TRANSACTIONS -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+
+                <span class="section-number">
+                    03
+                </span>
+
+                <h2>Suspicious Transactions</h2>
+
+            </div>
+
+            <span class="section-note">
+                {{ transactions|length }} Transactions
+            </span>
+
+        </div>
+
+
+        <div class="table-container">
+
+            <table>
+
+                <thead>
+
+                <tr>
+
+                    <th>Transaction</th>
+
+                    <th>Date / Time</th>
+
+                    <th>From</th>
+
+                    <th>To</th>
+
+                    <th>Amount</th>
+
+                    <th>Channel</th>
+
+                    <th>Why Flagged</th>
+
+                </tr>
+
+                </thead>
+
+
+                <tbody>
+
+                {% for transaction in transactions %}
+
+                <tr>
+
+                    <td class="mono">
+                        {{ transaction.transaction_id }}
+                    </td>
+
+                    <td>
+                        {{ transaction.timestamp }}
+                    </td>
+
+                    <td class="mono">
+                        {{ transaction.sender_account }}
+                    </td>
+
+                    <td class="mono">
+                        {{ transaction.receiver_account }}
+                    </td>
+
+                    <td class="amount">
+
+                        {{ transaction.currency }}
+
+                        {{ "%.2f"|format(transaction.amount) }}
+
+                    </td>
+
+                    <td>
+                        {{ transaction.channel or "—" }}
+                    </td>
+
+                    <td class="reason">
+
+                        {{ transaction.flag_reason or "—" }}
+
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </section>
+
+
+    <!-- RISK INDICATORS -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+
+                <span class="section-number">
+                    04
+                </span>
+
+                <h2>Why This Case Was Flagged</h2>
+
+            </div>
+
+        </div>
+
+
+        <div class="evidence-list">
+
+            {% for indicator in risk_indicators %}
+
+            <div class="evidence-item">
+
+                <span class="evidence-number">
+                    {{ loop.index }}
+                </span>
+
+                <span>
+                    {{ indicator }}
+                </span>
+
+            </div>
+
+            {% endfor %}
+
+        </div>
+
+    </section>
+
+
+    <!-- SUPPORTING EVIDENCE -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+
+                <span class="section-number">
+                    05
+                </span>
+
+                <h2>Supporting Evidence</h2>
+
+            </div>
+
+        </div>
+
+
+        <ul class="evidence-bullets">
+
+            {% for evidence in supporting_evidence %}
+
+                <li>
+                    {{ evidence }}
+                </li>
+
+            {% endfor %}
+
+        </ul>
+
+    </section>
+
+
+    <!-- OBSERVATIONS -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+
+                <span class="section-number">
+                    06
+                </span>
+
+                <h2>Analyst Observations</h2>
+
+            </div>
+
+        </div>
+
+
+        <div class="observation-box">
+
+            {% for observation in analyst_observations %}
+
+                <p>
+                    {{ observation }}
+                </p>
+
+            {% endfor %}
+
+        </div>
+
+    </section>
+
+
+    <!-- RECOMMENDATIONS -->
+
+    <section>
+
+        <div class="section-title">
+
+            <div>
+
+                <span class="section-number">
+                    07
+                </span>
+
+                <h2>Recommended Actions</h2>
+
+            </div>
+
+        </div>
+
+
+        <div class="recommendation-box">
+
+            {% for recommendation in recommendations %}
+
+                <div class="recommendation">
+
+                    <span class="recommendation-number">
+                        {{ loop.index }}
+                    </span>
+
+                    <span>
+                        {{ recommendation }}
+                    </span>
+
+                </div>
+
+            {% endfor %}
+
+        </div>
+
+    </section>
+
+
+    <!-- DISCLAIMER -->
+
+    <div class="disclaimer">
+
+        <strong>Investigation Note</strong>
+
+        <p>
+            This report presents system-generated risk indicators
+            and supporting evidence for investigator review.
+            A flagged transaction or account does not by itself
+            establish financial crime or money laundering.
+        </p>
+
+    </div>
+
+
+    <!-- FOOTER -->
+
+    <footer>
+
+        <span>
+            Project Vigilance
+        </span>
+
+        <span>
+            Confidential Investigation Report
+        </span>
+
+    </footer>
+
+
+</div>
+
+</body>
+
+</html>
