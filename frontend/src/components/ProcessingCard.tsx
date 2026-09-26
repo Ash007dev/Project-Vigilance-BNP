@@ -1,215 +1,63 @@
-import {
-  CheckCircle2,
-  Circle,
-} from "lucide-react";
-
-import {
-  useEffect,
-  useState,
-} from "react";
+import { CheckCircle2, Circle } from "lucide-react";
+import { useEffect, useState } from "react";
 
 
-interface ProcessingCardProps {
+type ProcessingCardProps = {
   file: File | null;
-
-  onComplete: () => void;
-}
-
+};
 
 const stages = [
-
-  "Uploading dataset...",
-
-  "Validating data...",
-
-  "Processing transactions...",
-
-  "Analyzing suspicious activity...",
-
-  "Generating risk scores...",
-
+  "Uploading dataset",
+  "Validating and cleaning rows",
+  "Saving transactions",
+  "Preparing detection data",
 ];
 
-
-export default function ProcessingCard({
-  file,
-  onComplete,
-}: ProcessingCardProps) {
-
-  const [progress, setProgress] =
-    useState(20);
-
-  const [currentStage, setCurrentStage] =
-    useState(1);
-
+export default function ProcessingCard({ file }: ProcessingCardProps) {
+  const [currentStage, setCurrentStage] = useState(0);
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      setCurrentStage((stage) => Math.min(stage + 1, stages.length - 1));
+    }, 1600);
+    return () => window.clearInterval(timer);
+  }, []);
 
-    const timer =
-      window.setInterval(() => {
-
-        setProgress((value) => {
-
-          const next =
-            Math.min(value + 20, 100);
-
-          if (next === 100) {
-
-            window.clearInterval(timer);
-
-            /*
-             * Give the user a tiny moment
-             * to see 100%, then navigate.
-             */
-
-            window.setTimeout(() => {
-              onComplete();
-            }, 700);
-
-          }
-
-          return next;
-
-        });
-
-
-        setCurrentStage((stage) => {
-
-          return Math.min(
-            stage + 1,
-            stages.length
-          );
-
-        });
-
-      }, 1800);
-
-
-    return () => {
-
-      window.clearInterval(timer);
-
-    };
-
-  }, [onComplete]);
-
-
-  const fileName =
-    file?.name ||
-    "Project_Vigilance_Dataset_Password_Protected.xlsx";
-
+  const progress = Math.min(20 + currentStage * 22, 88);
 
   return (
-
-    <section className="processing-card">
-
+    <section className="processing-card" aria-live="polite">
       <div className="processing-heading">
-
-        <h2>
-          Analyzing your dataset
-        </h2>
-
-        <p>
-          This usually takes a few moments.
-        </p>
-
+        <h2>Processing your dataset</h2>
+        <p>The dashboard will open when the API finishes.</p>
       </div>
-
-
-      {/* FILE */}
 
       <div className="progress-meta">
-
-        <strong>
-          {fileName}
-        </strong>
-
-        <span>
-          {progress}%
-        </span>
-
+        <strong>{file?.name ?? "Transaction dataset"}</strong>
+        <span>{progress}%</span>
       </div>
-
-
-      {/* PROGRESS */}
 
       <div className="progress-track">
-
-        <div
-          className="progress-value"
-
-          style={{
-            width: `${progress}%`,
-          }}
-        />
-
+        <div className="progress-value" style={{ width: `${progress}%` }} />
       </div>
-
-
-      {/* STEPS */}
 
       <div className="processing-steps">
-
-        {stages.map(
-          (label, index) => {
-
-            const completed =
-              index < currentStage;
-
-            const active =
-              index === currentStage;
-
-
-            return (
-
-              <div
-                key={label}
-
-                className={`
-                  processing-step
-                  ${
-                    completed
-                      ? "completed"
-                      : active
-                      ? "active"
-                      : "pending"
-                  }
-                `}
-              >
-
-                <div className="step-icon">
-
-                  {completed ? (
-
-                    <CheckCircle2
-                      size={19}
-                    />
-
-                  ) : (
-
-                    <Circle
-                      size={19}
-                    />
-
-                  )}
-
-                </div>
-
-
-                <span>
-                  {label}
-                </span>
-
+        {stages.map((label, index) => {
+          const completed = index < currentStage;
+          const active = index === currentStage;
+          return (
+            <div
+              key={label}
+              className={`processing-step ${completed ? "completed" : active ? "active" : "pending"}`}
+            >
+              <div className="step-icon">
+                {completed ? <CheckCircle2 size={19} /> : <Circle size={19} />}
               </div>
-
-            );
-
-          }
-        )}
-
+              <span>{label}</span>
+            </div>
+          );
+        })}
       </div>
-
     </section>
-
   );
 }
