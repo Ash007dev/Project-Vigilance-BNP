@@ -5,21 +5,20 @@ import cytoscape, { Core, ElementDefinition } from "cytoscape";
 const API = "http://localhost:8000/api";
 
 interface GraphNode {
-  data: {
-    id: string;
-    label?: string;
-    type?: string;
-  };
+  id: string;
+  type?: string;
+  label?: string;
 }
 
 interface GraphEdge {
-  data: {
-    id: string;
-    source: string;
-    target: string;
-    label?: string;
-    type?: string;
-  };
+  source: string;
+  target: string;
+  relationship?: string;
+  transaction_id?: string;
+  amount?: number;
+  currency?: string;
+  timestamp?: string;
+  channel?: string;
 }
 
 interface GraphResponse {
@@ -64,14 +63,149 @@ const RelationshipGraph: React.FC<RelationshipGraphProps> = ({
 
         const graph = response.data.graph;
 
+        /*
+         * ---------------------------------------------------------
+         * 1. PREPARE NODES
+         * ---------------------------------------------------------
+         */
+
+        const accountNodes = graph.nodes.filter(
+          (node) => node.type === "ACCOUNT"
+        );
+
+        const deviceNodes = graph.nodes.filter(
+          (node) => node.type === "DEVICE"
+        );
+
+        const ipNodes = graph.nodes.filter(
+          (node) => node.type === "IP"
+        );
+
+        const walletNodes = graph.nodes.filter(
+          (node) => node.type === "WALLET"
+        );
+
+        /*
+         * ---------------------------------------------------------
+         * 2. MANUAL POSITIONS
+         *
+         * Investigated account = center
+         * Intermediary accounts = surrounding ring
+         * Device/IP/Wallet = bottom area
+         * ---------------------------------------------------------
+         */
+
+        const positions: Record<
+          string,
+          {
+            x: number;
+            y: number;
+          }
+        > = {};
+
+        const CENTER_X = 600;
+        const CENTER_Y = 300;
+
+        // Investigated account
+        positions[account] = {
+          x: CENTER_X,
+          y: CENTER_Y,
+        };
+
+        // Other accounts
+        const otherAccounts = accountNodes.filter(
+          (node) => node.id !== account
+        );
+
+        const radiusX = 420;
+        const radiusY = 210;
+
+        otherAccounts.forEach((node, index) => {
+          const total = otherAccounts.length;
+
+          const angle =
+            -Math.PI / 2 + (index * 2 * Math.PI) / total;
+
+          positions[node.id] = {
+            x: CENTER_X + radiusX * Math.cos(angle),
+            y: CENTER_Y + radiusY * Math.sin(angle),
+          };
+        });
+
+        // Device nodes
+        deviceNodes.forEach((node, index) => {
+          positions[node.id] = {
+            x: CENTER_X - 180 + index * 120,
+            y: CENTER_Y + 330,
+          };
+        });
+
+        // IP nodes
+        ipNodes.forEach((node, index) => {
+          positions[node.id] = {
+            x: CENTER_X + 180 + index * 120,
+            y: CENTER_Y + 330,
+          };
+        });
+
+        // Wallet nodes
+        walletNodes.forEach((node, index) => {
+          positions[node.id] = {
+            x: CENTER_X + index * 140,
+            y: CENTER_Y + 420,
+          };
+        });
+
+        /*
+         * ---------------------------------------------------------
+         * 3. CREATE CYTOSCAPE ELEMENTS
+         * ---------------------------------------------------------
+         */
+
         const elements: ElementDefinition[] = [
-          ...graph.nodes,
-          ...graph.edges,
+          ...graph.nodes.map((node) => ({
+            data: {
+              id: node.id,
+              label:
+                node.id === account
+                  ? account
+                  : node.label || node.id,
+              type: node.type,
+            },
+            position: positions[node.id] || {
+              x: CENTER_X,
+              y: CENTER_Y,
+            },
+          })),
+
+          ...graph.edges.map((edge, index) => ({
+            data: {
+              id: `edge-${index}`,
+              source: edge.source,
+              target: edge.target,
+              relationship: edge.relationship || "",
+              transaction_id: edge.transaction_id || "",
+              amount: edge.amount || 0,
+              currency: edge.currency || "",
+            },
+          })),
         ];
+
+        /*
+         * ---------------------------------------------------------
+         * 4. DESTROY OLD GRAPH
+         * ---------------------------------------------------------
+         */
 
         if (cyRef.current) {
           cyRef.current.destroy();
         }
+
+        /*
+         * ---------------------------------------------------------
+         * 5. CREATE GRAPH
+         * ---------------------------------------------------------
+         */
 
         cyRef.current = cytoscape({
           container: containerRef.current,
@@ -79,14 +213,15 @@ const RelationshipGraph: React.FC<RelationshipGraphProps> = ({
           elements,
 
           layout: {
-            name: "cose",
-            animate: true,
-            animationDuration: 600,
+            name: "preset",
             fit: true,
-            padding: 50,
+            padding: 80,
           },
 
           style: [
+            /*
+             * BASE NODE
+             */
             {
               selector: "node",
               style: {
@@ -98,126 +233,156 @@ const RelationshipGraph: React.FC<RelationshipGraphProps> = ({
                 "text-valign": "bottom",
                 "text-halign": "center",
                 "text-margin-y": 8,
-                width: 28,
-                height: 28,
-                "border-width": 1,
+                width: 30,
+                height: 30,
+                "border-width": 2,
                 "border-color": "#64748b",
-                "overlay-opacity": 0,
+                "text-outline-width": 3,
+                "text-outline-color": "#07111f",
               },
             },
 
+            /*
+             * ACCOUNT
+             */
             {
               selector: 'node[type="ACCOUNT"]',
               style: {
                 "background-color": "#4f8cff",
                 "border-color": "#8bb5ff",
-                width: 34,
-                height: 34,
+                width: 38,
+                height: 38,
               },
             },
 
+            /*
+             * DEVICE
+             */
             {
               selector: 'node[type="DEVICE"]',
               style: {
                 "background-color": "#a78bfa",
                 "border-color": "#c4b5fd",
                 shape: "round-rectangle",
-                width: 32,
-                height: 25,
+                width: 42,
+                height: 30,
               },
             },
 
+            /*
+             * IP
+             */
             {
               selector: 'node[type="IP"]',
               style: {
                 "background-color": "#35d39a",
                 "border-color": "#6ee7b7",
                 shape: "diamond",
-                width: 30,
-                height: 30,
+                width: 36,
+                height: 36,
               },
             },
 
+            /*
+             * WALLET
+             */
             {
               selector: 'node[type="WALLET"]',
               style: {
                 "background-color": "#f5c451",
                 "border-color": "#fde68a",
                 shape: "hexagon",
-                width: 34,
-                height: 30,
+                width: 42,
+                height: 36,
               },
             },
 
+            /*
+             * INVESTIGATED ENTITY
+             */
             {
               selector: 'node[id="' + account + '"]',
               style: {
                 "background-color": "#ff667a",
-                "border-color": "#ffb0ba",
-                width: 46,
-                height: 46,
-                "font-size": "11px",
+                "border-color": "#ffffff",
+                width: 58,
+                height: 58,
+                "font-size": "12px",
                 "font-weight": "800",
                 "border-width": 3,
-                "shadow-blur": 18,
-                "shadow-color": "#ff667a",
-                "shadow-opacity": 0.45,
               },
             },
 
+            /*
+             * BASE EDGE
+             */
             {
               selector: "edge",
               style: {
                 width: 1.5,
-                "line-color": "#334155",
+                "line-color": "#475569",
                 "target-arrow-color": "#64748b",
                 "target-arrow-shape": "triangle",
                 "curve-style": "bezier",
                 "arrow-scale": 0.7,
-                label: "data(label)",
-                color: "#718096",
-                "font-size": "8px",
-                "text-background-color": "#0b111b",
-                "text-background-opacity": 0.9,
-                "text-background-padding": "3px",
               },
             },
 
+            /*
+             * TRANSACTION
+             */
             {
-              selector: 'edge[type="TRANSACTION"]',
+              selector: 'edge[relationship="TRANSACTION"]',
               style: {
                 "line-color": "#4f8cff",
                 "target-arrow-color": "#4f8cff",
-                width: 2,
+                width: 2.2,
+                opacity: 0.75,
               },
             },
 
+            /*
+             * DEVICE RELATIONSHIP
+             */
             {
-              selector: 'edge[type="DEVICE"]',
+              selector: 'edge[relationship="USES_DEVICE"]',
               style: {
                 "line-color": "#a78bfa",
                 "target-arrow-color": "#a78bfa",
                 "line-style": "dashed",
+                width: 1.8,
+                opacity: 0.65,
               },
             },
 
+            /*
+             * IP RELATIONSHIP
+             */
             {
-              selector: 'edge[type="IP"]',
+              selector: 'edge[relationship="USES_IP"]',
               style: {
                 "line-color": "#35d39a",
                 "target-arrow-color": "#35d39a",
                 "line-style": "dashed",
+                width: 1.8,
+                opacity: 0.65,
               },
             },
 
+            /*
+             * SELECTED NODE
+             */
             {
               selector: "node:selected",
               style: {
-                "border-width": 3,
+                "border-width": 4,
                 "border-color": "#ffffff",
               },
             },
 
+            /*
+             * SELECTED EDGE
+             */
             {
               selector: "edge:selected",
               style: {
@@ -228,6 +393,12 @@ const RelationshipGraph: React.FC<RelationshipGraphProps> = ({
             },
           ],
         });
+
+        /*
+         * ---------------------------------------------------------
+         * 6. NODE CLICK
+         * ---------------------------------------------------------
+         */
 
         cyRef.current.on("tap", "node", (event) => {
           const node = event.target;
@@ -263,11 +434,17 @@ const RelationshipGraph: React.FC<RelationshipGraphProps> = ({
     };
   }, [account]);
 
+  /*
+   * ---------------------------------------------------------
+   * CONTROLS
+   * ---------------------------------------------------------
+   */
+
   const zoomIn = () => {
     if (!cyRef.current) return;
 
     cyRef.current.zoom({
-      level: cyRef.current.zoom() * 1.2,
+      level: cyRef.current.zoom() * 1.25,
       renderedPosition: {
         x: cyRef.current.width() / 2,
         y: cyRef.current.height() / 2,
@@ -290,14 +467,21 @@ const RelationshipGraph: React.FC<RelationshipGraphProps> = ({
   const fitGraph = () => {
     if (!cyRef.current) return;
 
-    cyRef.current.fit(undefined, 50);
+    cyRef.current.fit(undefined, 70);
   };
+
+  /*
+   * ---------------------------------------------------------
+   * UI
+   * ---------------------------------------------------------
+   */
 
   return (
     <div className="relationship-graph">
       <div className="graph-toolbar">
         <div>
           <h3>Relationship Network</h3>
+
           <p>
             Transaction, device, IP and wallet relationships for{" "}
             <strong>{account}</strong>
