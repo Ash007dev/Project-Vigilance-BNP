@@ -10,6 +10,7 @@ from app.api.alerts import router as alerts_router
 from app.api.investigation import router as investigation_router
 from app.api.graph import router as graph_router
 from app.api.ai import router as ai_router
+from app.api.copilot import router as copilot_router
 from app.api.report import router as report_router
 
 app = FastAPI(
@@ -70,6 +71,11 @@ app.include_router(
     ai_router,
     prefix="/api",
     )
+
+app.include_router(
+    copilot_router,
+    prefix="/api",
+)
 
 app.include_router(
         report_router,
