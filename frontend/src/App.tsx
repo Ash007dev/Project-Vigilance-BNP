@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import "./App.css";
 import Investigation from "./Investigation";
+import Landing from "./Landing";
+
 
 const API = "http://localhost:8000/api";
 
@@ -55,12 +57,16 @@ function App() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [showLanding, setShowLanding] = useState(true);
+
   // Currently selected investigation entity
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null);
 
   useEffect(() => {
-    loadDashboard();
-  }, []);
+    if (!showLanding) {
+      loadDashboard();
+    }
+  }, [showLanding]);
 
   async function loadDashboard() {
     try {
@@ -88,6 +94,13 @@ function App() {
     (alert) => alert.risk_level === "CRITICAL"
   ).length;
 
+  if (showLanding) {
+    return (
+      <Landing
+        onAnalysisComplete={() => setShowLanding(false)}
+      />
+    );
+  }
   /*
    * ---------------------------------------------------------
    * INVESTIGATION VIEW
@@ -120,6 +133,7 @@ function App() {
       </div>
     );
   }
+
 
   /*
    * ---------------------------------------------------------
